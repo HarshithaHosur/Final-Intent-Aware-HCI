@@ -12,8 +12,8 @@ echo.
 REM 1. Navigate to correct directory explicitly
 cd /d "d:\ishita"
 
-REM 2. Run main script reliably
-python new.py
+REM 2. Run unified launcher (starts Django + AI + opens dashboard)
+python launcher.py
 
 REM 3. Ensure no silent failure
 echo.

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="settings-header fade-in">
+    <h3>AETHER_CORE / Vault</h3>
+    <h1>System Config Vault</h1>
+    <p>Secure storage for all saved settings, gesture maps, and voice patterns.</p>
+</div>
+
+<div class="split-layout fade-in">
+    <div class="left-panel" style="max-width: 100%;">
+        <div class="detail-card" style="margin-bottom: 20px; border-color: var(--accent-purple);">
+            <h4 style="color: var(--accent-purple);">Secure Access Required</h4>
+            <div class="detail-content">
+                <p>Data within the Vault is encrypted and locked to the current Operator ID.</p>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div class="detail-card">
+                <h4>Saved Gesture Configs</h4>
+                <div class="detail-content">
+                    <ul style="list-style-type: none; padding-left: 0;">
+                        <li style="padding: 10px 0; border-bottom: 1px solid var(--border-color);">Default_Map_v1.0 <span class="status-badge" style="float: right;">ACTIVE</span></li>
+                        <li style="padding: 10px 0; border-bottom: 1px solid var(--border-color);">Gaming_Profile_x2</li>
+                        <li style="padding: 10px 0; border-bottom: 1px solid var(--border-color);">Presentation_Mode</li>
+                    </ul>
+                    <button class="btn-primary" style="margin-top: 15px; width: 100%; font-size: 12px;">Load Config</button>
+                </div>
+            </div>
+
+            <div class="detail-card">
+                <h4>Saved Voice Configs</h4>
+                <div class="detail-content">
+                    <ul style="list-style-type: none; padding-left: 0;">
+                        <li style="padding: 10px 0; border-bottom: 1px solid var(--border-color);">Voice_Profile_Primary <span class="status-badge" style="float: right;">ACTIVE</span></li>
+                        <li style="padding: 10px 0; border-bottom: 1px solid var(--border-color);">Quiet_Environment</li>
+                        <li style="padding: 10px 0; border-bottom: 1px solid var(--border-color);">High_Noise_Environment</li>
+                    </ul>
+                    <button class="btn-primary" style="margin-top: 15px; width: 100%; font-size: 12px;">Load Config</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

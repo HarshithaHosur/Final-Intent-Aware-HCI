@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="settings-header fade-in">
+    <h3>KERNEL ACCESS / CONTROLS</h3>
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h1>System Controls</h1>
+        <div>
+            <button class="btn-secondary" style="background: transparent; border: 1px solid var(--border-color); color: var(--text-primary); margin-right: 10px;">↻ REBOOT CORE</button>
+            <button class="btn-emergency">✖ EMERGENCY STOP</button>
+        </div>
+    </div>
+</div>
+
+<div class="split-layout fade-in">
+    <div class="left-panel" style="max-width: 100%; display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+        
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            <div class="detail-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span class="icon" style="color: var(--accent-cyan);">⚡</span>
+                        <h4>Power Management</h4>
+                    </div>
+                    <span style="font-size: 32px; color: var(--border-color);">⚡</span>
+                </div>
+                
+                <div class="detail-content">
+                    <div style="margin-bottom: 40px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
+                            <span style="font-weight: 600;">Activation Timeout</span>
+                            <span style="color: var(--accent-cyan); background: rgba(0, 229, 255, 0.1); padding: 4px 8px; border-radius: 4px;">450ms</span>
+                        </div>
+                        <input type="range" min="0" max="1000" value="450" style="width: 100%; height: 4px; background: var(--border-color); appearance: none; border-radius: 2px;">
+                        <div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 10px; color: var(--text-secondary); text-transform: uppercase;">
+                            <span>Instant</span>
+                            <span>Sustain</span>
+                        </div>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <div style="background: var(--bg-dark); padding: 15px; border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                                <span style="font-weight: 600;">High Performance Mode</span>
+                                <div style="width: 30px; height: 16px; background: var(--accent-cyan); border-radius: 8px; position: relative;">
+                                    <div style="width: 12px; height: 12px; background: #fff; border-radius: 50%; position: absolute; right: 2px; top: 2px;"></div>
+                                </div>
+                            </div>
+                            <p style="font-size: 11px; color: var(--text-secondary);">Overrides efficiency protocols to minimize neural latency by 40%.</p>
+                        </div>
+                        <div style="background: var(--bg-dark); padding: 15px; border-radius: 8px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                                <span style="font-weight: 600;">Stealth Consumption</span>
+                                <div style="width: 30px; height: 16px; background: var(--border-color); border-radius: 8px; position: relative;">
+                                    <div style="width: 12px; height: 12px; background: var(--text-secondary); border-radius: 50%; position: absolute; left: 2px; top: 2px;"></div>
+                                </div>
+                            </div>
+                            <p style="font-size: 11px; color: var(--text-secondary);">Reduces signal trace for sensitive operations. May increase jitter.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="detail-card" style="flex: 1; font-family: var(--font-mono); font-size: 12px; display: flex; flex-direction: column;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 15px; color: var(--text-secondary);">
+                    <span><span style="color: var(--accent-red);">●</span> <span style="color: var(--accent-cyan);">●</span> <span style="color: var(--accent-purple);">●</span> AETHER_CORE TERMINAL V4.2.0</span>
+                    <span>PID: 1042  LOAD: 12.4%  UPTIME: 44:12:09</span>
+                </div>
+                <div style="background: var(--bg-dark); flex: 1; padding: 15px; border-radius: 6px; overflow: hidden; color: var(--text-secondary);">
+                    <p>[14:02:11] CORE: Initializing intent-stream-listener...</p>
+                    <p>[14:02:12] LINK: Handshake verified with Node_7712</p>
+                    <p>[14:02:14] SYSTEM: Allocating virtual memory segments [OK]</p>
+                    <p style="color: var(--accent-red);">[14:02:15] WARN: Thermal increase detected in Sector_B4</p>
+                    <p>[14:02:16] SYSTEM: Calibration routine #992 complete</p>
+                    <p style="color: var(--accent-cyan);">[14:02:18] CORE: Re-routing power to peripheral sensors</p>
+                    <p>[14:02:20] SYSTEM: Heartbeat pulse synchronized 0.88ms</p>
+                </div>
+            </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            <div class="detail-card">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+                    <span class="icon" style="color: var(--accent-purple);">🚀</span>
+                    <h4>Startup Behavior</h4>
+                </div>
+                
+                <div style="display: flex; flex-direction: column; gap: 15px;">
+                    <div style="background: var(--bg-dark); padding: 15px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: 600; font-size: 13px;">Autostart Core Services</span>
+                        <div style="width: 30px; height: 16px; background: var(--accent-cyan); border-radius: 8px; position: relative;"><div style="width: 12px; height: 12px; background: #fff; border-radius: 50%; position: absolute; right: 2px; top: 2px;"></div></div>
+                    </div>
+                    <div style="background: var(--bg-dark); padding: 15px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: 600; font-size: 13px;">Verbose Boot Logs</span>
+                        <div style="width: 30px; height: 16px; background: var(--accent-cyan); border-radius: 8px; position: relative;"><div style="width: 12px; height: 12px; background: #fff; border-radius: 50%; position: absolute; right: 2px; top: 2px;"></div></div>
+                    </div>
+                    <div style="background: var(--bg-dark); padding: 15px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: 600; font-size: 13px;">Neural Calibration</span>
+                        <div style="width: 30px; height: 16px; background: var(--border-color); border-radius: 8px; position: relative;"><div style="width: 12px; height: 12px; background: var(--text-secondary); border-radius: 50%; position: absolute; left: 2px; top: 2px;"></div></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="detail-card" style="border-color: rgba(255, 61, 87, 0.3); background: rgba(255, 61, 87, 0.05);">
+                <h4 style="color: var(--accent-red); display: flex; align-items: center; gap: 10px;"><span>⚠️</span> WARNING SYSTEM</h4>
+                <p style="font-size: 12px; line-height: 1.5; color: rgba(255, 255, 255, 0.8);">System thermal levels at 84%. Cooling subroutines are engaged but approaching threshold.</p>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

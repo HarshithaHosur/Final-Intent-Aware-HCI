@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>INTENT_OS Dashboard</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=3.0">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="os-container">
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
+            <div class="logo-area">
+                <h1 class="logo">INTENT_OS</h1>
+                <span class="version">v4.2.0 Active</span>
+            </div>
+            
+            <nav class="nav-menu">
+                <a href="{% url 'dashboard_home' %}" class="nav-item {% if request.resolver_match.url_name == 'dashboard_home' %}active{% endif %}">
+                    <span class="icon">⊞</span> Dashboard
+                </a>
+                <a href="{% url 'gesture_settings' %}" class="nav-item {% if request.resolver_match.url_name == 'gesture_settings' %}active{% endif %}">
+                    <span class="icon">✍</span> Gesture Settings
+                </a>
+                <a href="{% url 'voice_settings' %}" class="nav-item {% if request.resolver_match.url_name == 'voice_settings' %}active{% endif %}">
+                    <span class="icon">🎤</span> Voice Settings
+                </a>
+                <a href="{% url 'cursor_control' %}" class="nav-item {% if request.resolver_match.url_name == 'cursor_control' %}active{% endif %}">
+                    <span class="icon">🖱️</span> Cursor Control
+                </a>
+                <a href="{% url 'system_controls' %}" class="nav-item {% if request.resolver_match.url_name == 'system_controls' %}active{% endif %}">
+                    <span class="icon">⚙</span> System Controls
+                </a>
+                <a href="{% url 'help_guide' %}" class="nav-item {% if request.resolver_match.url_name == 'help_guide' %}active{% endif %}">
+                    <span class="icon">?</span> Help & Guide
+                </a>
+            </nav>
+
+            <div class="user-profile">
+                <div class="avatar">O1</div>
+                <div class="info">
+                    <div class="name">Operator_01</div>
+                    <div class="level">LEVEL 5 ACCESS</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main class="main-content">
+            <header class="top-bar">
+                <div class="top-nav-left">
+                    <h2>AETHER_CORE</h2>
+                    <nav class="top-links">
+                        <a href="{% url 'live_nodes' %}" class="{% if request.resolver_match.url_name == 'live_nodes' %}active{% endif %}">Live Nodes</a>
+                        <a href="#" class="{% if request.resolver_match.url_name == 'neural_link' %}active{% endif %}">Neural Link</a>
+                        <a href="{% url 'vault' %}" class="{% if request.resolver_match.url_name == 'vault' %}active{% endif %}">Vault</a>
+                    </nav>
+                </div>
+                <div class="top-nav-right">
+                    <div class="system-status">
+                        <span class="dot animated-pulse"></span> System Online
+                    </div>
+                    <button class="btn-icon">🔔</button>
+                    <button class="btn-icon">📊</button>
+                    <button class="btn-emergency">Emergency Kill</button>
+                </div>
+            </header>
+
+            <div class="content-area">
+                {% block content %}
+                {% endblock %}
+            </div>
+        </main>
+    </div>
+    
+    <script src="{% static 'js/app.js' %}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

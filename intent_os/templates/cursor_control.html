@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="settings-header fade-in">
+    <h3>AETHER_CORE / Cursor Control</h3>
+    <h1>Cursor Dynamics</h1>
+    <p>Advanced ocular-neural tracking calibration for high-precision environmental interaction.</p>
+</div>
+
+<div class="split-layout fade-in">
+    <div class="left-panel" style="max-width: 100%; display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+        
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            <div class="detail-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h4>Tracking Dynamics</h4>
+                    <span class="status-badge" style="background: rgba(0, 229, 255, 0.2);">REAL-TIME ENGINE ACTIVE</span>
+                </div>
+                
+                <div class="detail-content">
+                    <div style="margin-bottom: 20px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                            <span style="font-weight: 600;">TRACKING SPEED</span>
+                            <span style="color: var(--accent-cyan);">1.42x</span>
+                        </div>
+                        <input type="range" min="0" max="100" value="70" style="width: 100%; height: 4px; background: var(--border-color); appearance: none; border-radius: 2px;">
+                    </div>
+                    
+                    <div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                            <span style="font-weight: 600;">SMOOTHING INDEX</span>
+                            <span style="color: var(--accent-cyan);">88%</span>
+                        </div>
+                        <input type="range" min="0" max="100" value="88" style="width: 100%; height: 4px; background: var(--border-color); appearance: none; border-radius: 2px;">
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div class="detail-card">
+                    <h4>Cursor Mode</h4>
+                    <div class="detail-content">
+                        <button class="btn-primary" style="margin-right: 10px;">Absolute</button>
+                        <button class="btn-secondary" style="background: transparent; border: 1px solid var(--border-color); color: var(--text-secondary);">Relative</button>
+                    </div>
+                </div>
+                <div class="detail-card">
+                    <h4>Drag & Drop</h4>
+                    <div class="detail-content" style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="color: var(--accent-cyan); font-weight: 600;">ENABLED</span>
+                        <div style="width: 40px; height: 20px; background: var(--accent-cyan); border-radius: 10px; position: relative;">
+                            <div style="width: 16px; height: 16px; background: #fff; border-radius: 50%; position: absolute; right: 2px; top: 2px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            
+            <style>
+                @keyframes radarSpin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+                @keyframes pulseGlow {
+                    0% { box-shadow: 0 0 10px var(--accent-cyan), inset 0 0 10px var(--accent-cyan); opacity: 0.8; }
+                    50% { box-shadow: 0 0 30px var(--accent-cyan), inset 0 0 20px var(--accent-cyan); opacity: 1; }
+                    100% { box-shadow: 0 0 10px var(--accent-cyan), inset 0 0 10px var(--accent-cyan); opacity: 0.8; }
+                }
+                @keyframes centerDotPulse {
+                    0% { transform: translate(-50%, -50%) scale(1); box-shadow: 0 0 10px var(--accent-cyan); }
+                    50% { transform: translate(-50%, -50%) scale(1.5); box-shadow: 0 0 25px var(--accent-cyan); }
+                    100% { transform: translate(-50%, -50%) scale(1); box-shadow: 0 0 10px var(--accent-cyan); }
+                }
+                @keyframes seqBlink {
+                    0%, 100% { opacity: 0.2; transform: scale(0.8); }
+                    50% { opacity: 1; transform: scale(1.5); box-shadow: 0 0 15px var(--accent-cyan); }
+                }
+                @keyframes scanline {
+                    0% { transform: translateY(-75px); }
+                    100% { transform: translateY(75px); }
+                }
+                
+                .visualizer-circle {
+                    width: 150px; 
+                    height: 150px; 
+                    border: 2px dashed rgba(0, 229, 255, 0.4); 
+                    border-radius: 50%; 
+                    position: relative;
+                    animation: pulseGlow 3s infinite ease-in-out;
+                    overflow: hidden;
+                }
+                
+                .visualizer-spin {
+                    position: absolute;
+                    top: 0; left: 0; right: 0; bottom: 0;
+                    border: 2px solid transparent;
+                    border-top: 2px solid var(--accent-cyan);
+                    border-right: 2px solid var(--accent-cyan);
+                    border-radius: 50%;
+                    animation: radarSpin 4s linear infinite;
+                }
+
+                .visualizer-scan {
+                    position: absolute;
+                    width: 100%;
+                    height: 2px;
+                    background: rgba(0, 229, 255, 0.6);
+                    box-shadow: 0 0 10px var(--accent-cyan);
+                    left: 0;
+                    top: 50%;
+                    animation: scanline 2s linear infinite alternate;
+                }
+                
+                .calib-dot {
+                    width: 8px; 
+                    height: 8px; 
+                    background: var(--accent-cyan); 
+                    border-radius: 50%;
+                    transition: all 0.3s;
+                }
+                
+                .calib-cell:hover .calib-dot {
+                    transform: scale(2);
+                    box-shadow: 0 0 20px var(--accent-cyan);
+                    background: #fff;
+                }
+
+                .calib-cell {
+                    border: 1px dashed rgba(140, 155, 180, 0.2); 
+                    border-radius: 6px; 
+                    display: flex; 
+                    align-items: center; 
+                    justify-content: center;
+                    background: rgba(0, 229, 255, 0.02);
+                    transition: all 0.3s;
+                    cursor: crosshair;
+                }
+                
+                .calib-cell:hover {
+                    border-color: rgba(0, 229, 255, 0.5);
+                    background: rgba(0, 229, 255, 0.05);
+                }
+
+                .dot-1 { animation: seqBlink 4s infinite 0s; }
+                .dot-2 { animation: seqBlink 4s infinite 1s; }
+                .dot-3 { animation: seqBlink 4s infinite 2s; }
+                .dot-4 { animation: seqBlink 4s infinite 3s; }
+            </style>
+
+            <div class="detail-card" style="height: 250px; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden;">
+                <!-- Decorative background grid -->
+                <div style="position: absolute; top:0; left:0; right:0; bottom:0; background-image: radial-gradient(rgba(0, 229, 255, 0.1) 1px, transparent 1px); background-size: 20px 20px; opacity: 0.5;"></div>
+                
+                <div class="visualizer-circle">
+                    <div class="visualizer-spin"></div>
+                    <div class="visualizer-scan"></div>
+                    <div style="width: 100%; height: 1px; background: rgba(0, 229, 255, 0.3); position: absolute; top: 50%;"></div>
+                    <div style="width: 1px; height: 100%; background: rgba(0, 229, 255, 0.3); position: absolute; left: 50%;"></div>
+                    <div style="width: 8px; height: 8px; background: #fff; border-radius: 50%; position: absolute; left: 50%; top: 50%; animation: centerDotPulse 1.5s infinite;"></div>
+                </div>
+                
+                <div style="position: absolute; bottom: 15px; left: 20px; z-index: 2;">
+                    <h4 style="margin-bottom: 5px; text-shadow: 0 0 5px rgba(0,0,0,0.5);">VISUALIZER_STREAM_01</h4>
+                    <span style="font-size: 10px; color: var(--accent-cyan); font-family: var(--font-mono); text-shadow: 0 0 5px rgba(0,229,255,0.3);">LATENCY: <span id="mock-latency">0.04</span>ms</span>
+                </div>
+            </div>
+            
+            <div class="detail-card" style="flex: 1;">
+                <h4>CALIBRATION GRID</h4>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 10px; height: calc(100% - 30px); margin-top: 10px;">
+                    <div class="calib-cell"><div class="calib-dot dot-1"></div></div>
+                    <div class="calib-cell"><div class="calib-dot dot-2"></div></div>
+                    <div class="calib-cell"><div class="calib-dot dot-3"></div></div>
+                    <div class="calib-cell"><div class="calib-dot dot-4"></div></div>
+                </div>
+            </div>
+            
+            <script>
+                // Make the latency value fluctuate slightly for realism
+                setInterval(() => {
+                    const latency = (0.04 + (Math.random() * 0.02 - 0.01)).toFixed(2);
+                    const el = document.getElementById('mock-latency');
+                    if (el) el.innerText = latency;
+                }, 500);
+            </script>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

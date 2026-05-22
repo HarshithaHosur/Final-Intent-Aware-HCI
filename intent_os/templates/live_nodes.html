@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="settings-header fade-in">
+    <h3>AETHER_CORE / Live Nodes</h3>
+    <h1>Active Modules</h1>
+    <p>Real-time status of all connected system nodes and interfaces.</p>
+</div>
+
+<div class="split-layout fade-in">
+    <div class="left-panel" style="max-width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+        
+        <div class="detail-card">
+            <h4>Spatial Gestures</h4>
+            <div class="detail-content" style="display: flex; justify-content: space-between; align-items: center;">
+                <p>Tracking hand mechanics and intent.</p>
+                <div class="system-status" id="gesture-status">
+                    <span class="dot animated-pulse" style="background: #00e5ff; box-shadow: 0 0 8px #00e5ff;"></span> ONLINE
+                </div>
+            </div>
+        </div>
+
+        <div class="detail-card">
+            <h4>Voice Commands</h4>
+            <div class="detail-content" style="display: flex; justify-content: space-between; align-items: center;">
+                <p>Neural voice engine processing.</p>
+                <div class="system-status" id="voice-status">
+                    <span class="dot animated-pulse" style="background: #00e5ff; box-shadow: 0 0 8px #00e5ff;"></span> ONLINE
+                </div>
+            </div>
+        </div>
+
+        <div class="detail-card" id="db-card">
+            <h4>Database Link</h4>
+            <div class="detail-content" style="display: flex; justify-content: space-between; align-items: center;">
+                <p>MongoDB real-time log stream.</p>
+                <div class="system-status" id="db-status">
+                    <span class="dot animated-pulse" style="background: #00e5ff; box-shadow: 0 0 8px #00e5ff;"></span> ONLINE
+                </div>
+            </div>
+        </div>
+
+        <div class="detail-card" style="border-color: var(--accent-red);">
+            <h4>Eye Tracking</h4>
+            <div class="detail-content" style="display: flex; justify-content: space-between; align-items: center;">
+                <p>Ocular focal point mapping.</p>
+                <div class="system-status" style="border-color: var(--accent-red); color: var(--accent-red); background: rgba(255, 61, 87, 0.1);">
+                    <span class="dot" style="background: var(--accent-red); box-shadow: 0 0 8px var(--accent-red);"></span> OFFLINE
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function updateNodeStatus() {
+    fetch('/api/system-status/')
+        .then(res => res.json())
+        .then(data => {
+            setStatus('gesture-status', data.gestures_online);
+            setStatus('voice-status', data.voice_online);
+            setStatus('db-status', data.database_online);
+            // Update database card border color
+            const dbCard = document.getElementById('db-card');
+            if (dbCard) {
+                dbCard.style.borderColor = data.database_online ? '' : 'var(--accent-red)';
+            }
+        })
+        .catch(() => {
+            setStatus('gesture-status', false);
+            setStatus('voice-status', false);
+            setStatus('db-status', false);
+        });
+}
+
+function setStatus(elementId, isOnline) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    if (isOnline) {
+        el.innerHTML = '<span class="dot animated-pulse" style="background: #00e5ff; box-shadow: 0 0 8px #00e5ff;"></span> ONLINE';
+        el.style.borderColor = '';
+        el.style.color = '';
+        el.style.background = '';
+    } else {
+        el.innerHTML = '<span class="dot" style="background: var(--accent-red); box-shadow: 0 0 8px var(--accent-red);"></span> OFFLINE';
+        el.style.borderColor = 'var(--accent-red)';
+        el.style.color = 'var(--accent-red)';
+        el.style.background = 'rgba(255, 61, 87, 0.1)';
+    }
+}
+
+updateNodeStatus();
+setInterval(updateNodeStatus, 3000);
+</script>
+{% endblock %}
+

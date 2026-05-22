@@ -68,11 +68,12 @@ RIGHT_PINCH_THRESHOLD = 0.055
 
 # ── Click Debounce ──
 # Minimum time (seconds) between two successive click triggers
-CLICK_COOLDOWN = 0.35
+CLICK_COOLDOWN = 0.5
 
 # ── Drag Detection ──
 # How many consecutive "pinch held" frames before we enter drag mode
 DRAG_ENTRY_FRAMES = 4
+
 
 
 # ============================================================
@@ -172,45 +173,30 @@ class CursorController:
         self.prev_x = None
         self.prev_y = None
 
-        # ── Left click state ──
-        self.left_pinching = False      # is the pinch currently held?
-        self.left_click_time = 0        # timestamp of last click
+        # ── Tap & Drag State ──
+        self.z_history = []
+        self.tap_count = 0
+        self.last_tap_time = 0
+        self.drag_active = False
 
-        # ── Right click state ──
-        self.right_pinching = False
+        # ── Click states ──
+        self.left_click_time = 0
         self.right_click_time = 0
-
-        # ── Drag state ──
-        self.drag_active = False        # is the mouse button held down?
-        self.pinch_hold_frames = 0      # consecutive frames pinch is held
+        self.left_pinching = False
+        self.right_pinching = False
+        self.pinch_hold_frames = 0
 
     # ────────────────────────────────────────────────────
     #  PUBLIC API
     # ────────────────────────────────────────────────────
 
     def update(self, landmarks, img):
-        """
-        Process one frame of hand landmarks.
-
-        Parameters
-        ----------
-        landmarks : list of mediapipe NormalizedLandmark
-            The 21 hand landmarks from MediaPipe.
-        img : numpy.ndarray
-            The current camera frame (BGR) — used only for
-            drawing visual feedback. Can be None to skip drawing.
-
-        Returns
-        -------
-        dict   Information about what happened this frame:
-               'cursor_pos', 'left_click', 'right_click',
-               'dragging', 'left_dist', 'right_dist'
-        """
         info = {
             'cursor_pos': (0, 0),
             'left_click': False,
             'right_click': False,
             'dragging': False,
+            'deactivate_cursor': False,
             'left_dist': 1.0,
             'right_dist': 1.0,
         }
@@ -220,25 +206,30 @@ class CursorController:
 
         # ── 1. Get index fingertip position (landmark 8) ──
         index_tip = landmarks[8]
+        index_mcp = landmarks[5]
 
-        # NOTE: The camera frame is already flipped horizontally
-        # (cv2.flip(img, 1)) in main loop, and MediaPipe processes
-        # the flipped image, so index_tip.x is already corrected:
-        #   hand moves right → index_tip.x increases → cursor goes right
-        # No additional mirror correction needed here.
+        # ── 2. Detect Peace Sign (Deactivate Cursor) ──
+        index_up = index_tip.y < landmarks[6].y
+        middle_up = landmarks[12].y < landmarks[10].y
+        ring_down = landmarks[16].y > landmarks[14].y
+        pinky_down = landmarks[20].y > landmarks[18].y
+        
+        peace_sign = index_up and middle_up and ring_down and pinky_down
+        if peace_sign:
+            info['deactivate_cursor'] = True
+            if self.drag_active:
+                pyautogui.mouseUp(button='left', _pause=False)
+                self.drag_active = False
+            return info
 
-        # ── 2. Map to screen coordinates ──
+        # ── 3. Map to screen & Smoothing ──
         raw_x, raw_y = map_to_screen(index_tip.x, index_tip.y)
-
-        # ── 3. Apply exponential smoothing ──
         smooth_x, smooth_y = self.smoother.update(raw_x, raw_y)
 
-        # ── 4. Apply dead zone ──
         if self.prev_x is not None:
             dx = abs(smooth_x - self.prev_x)
             dy = abs(smooth_y - self.prev_y)
             if dx < DEAD_ZONE_PX and dy < DEAD_ZONE_PX:
-                # Movement too small — keep previous position
                 smooth_x = self.prev_x
                 smooth_y = self.prev_y
 
@@ -246,78 +237,89 @@ class CursorController:
         self.prev_y = smooth_y
         info['cursor_pos'] = (smooth_x, smooth_y)
 
-        # ── 5. Move the OS cursor ──
+        # Move the OS cursor
         pyautogui.moveTo(smooth_x, smooth_y, _pause=False)
 
-        # ── 6. Detect left pinch (thumb tip ↔ index tip) ──
+        now = time.time()
+
+        # ── 4. Detect Index Finger UP gestures ──
+        is_index_up = index_up and not middle_up and ring_down and pinky_down
+
+        # Detect left pinch (thumb tip ↔ index tip) for select/drag
         thumb_tip = landmarks[4]
         left_dist = landmark_distance(thumb_tip, index_tip)
         info['left_dist'] = left_dist
-
-        left_pinch_now = left_dist < PINCH_THRESHOLD
-
-        # ── 7. Detect right pinch (thumb tip ↔ middle tip) ──
+        
+        # Legacy right pinch
         middle_tip = landmarks[12]
         right_dist = landmark_distance(thumb_tip, middle_tip)
         info['right_dist'] = right_dist
 
-        right_pinch_now = right_dist < RIGHT_PINCH_THRESHOLD
-
-        now = time.time()
-
-        # ── 8. Handle LEFT CLICK / DRAG ──
-        if left_pinch_now:
-            self.pinch_hold_frames += 1
-
+        if left_dist < PINCH_THRESHOLD:
             if not self.left_pinching:
-                # Pinch just started
                 self.left_pinching = True
-
-                if self.pinch_hold_frames >= DRAG_ENTRY_FRAMES and not self.drag_active:
-                    # Held long enough → start drag
-                    self.drag_active = True
-                    pyautogui.mouseDown(button='left', _pause=False)
-                    info['dragging'] = True
-
-                elif not self.drag_active:
-                    # Quick pinch → single click (with cooldown)
-                    if now - self.left_click_time > CLICK_COOLDOWN:
-                        pyautogui.click(_pause=False)
-                        self.left_click_time = now
-                        info['left_click'] = True
-
-            else:
-                # Pinch is being held
-                if self.pinch_hold_frames >= DRAG_ENTRY_FRAMES and not self.drag_active:
-                    self.drag_active = True
-                    pyautogui.mouseDown(button='left', _pause=False)
-
-                if self.drag_active:
-                    info['dragging'] = True
-
+                if now - self.left_click_time > CLICK_COOLDOWN:
+                    pyautogui.click(_pause=False)
+                    self.left_click_time = now
+                    info['left_click'] = True
         else:
-            # Pinch released
-            if self.drag_active:
-                pyautogui.mouseUp(button='left', _pause=False)
-                self.drag_active = False
-
             self.left_pinching = False
-            self.pinch_hold_frames = 0
+            self.drag_active = False
 
-        # ── 9. Handle RIGHT CLICK ──
-        if right_pinch_now:
-            if not self.right_pinching:
-                self.right_pinching = True
+        if not is_index_up:
+            self.z_history.clear()
+            
+            if right_dist < RIGHT_PINCH_THRESHOLD:
+                if not self.right_pinching:
+                    self.right_pinching = True
+                    if now - self.right_click_time > CLICK_COOLDOWN:
+                        pyautogui.rightClick(_pause=False)
+                        self.right_click_time = now
+                        info['right_click'] = True
+            else:
+                self.right_pinching = False
+
+            info['dragging'] = self.drag_active
+            if img is not None:
+                self._draw_feedback(img, landmarks, info, left_dist, right_dist)
+            return info
+
+        # If index is UP, check for tilt and tap
+        self.z_history.append(index_tip.z)
+        if len(self.z_history) > 10:
+            self.z_history.pop(0)
+
+        # Tilt threshold
+        tilt_dx = index_tip.x - index_mcp.x
+        tilt_right = tilt_dx > 0.04
+        tilt_left = tilt_dx < -0.04
+        straight = not tilt_right and not tilt_left
+
+        forward_push = False
+        if len(self.z_history) >= 5:
+            # Check if Z decreased (moved forward towards camera)
+            z_drop = self.z_history[0] - self.z_history[-1]
+            if z_drop > 0.025:
+                forward_push = True
+                self.z_history.clear() # reset to avoid multiple triggers
+
+        if forward_push:
+            if tilt_right:
                 if now - self.right_click_time > CLICK_COOLDOWN:
                     pyautogui.rightClick(_pause=False)
                     self.right_click_time = now
                     info['right_click'] = True
-        else:
-            self.right_pinching = False
+            elif tilt_left:
+                if now - self.left_click_time > CLICK_COOLDOWN:
+                    pyautogui.click(_pause=False)
+                    self.left_click_time = now
+                    info['left_click'] = True
+        
+        info['dragging'] = self.drag_active
 
-        # ── 10. Visual Feedback on camera frame ──
+        # Visual Feedback
         if img is not None:
-            self._draw_feedback(img, landmarks, info, left_dist, right_dist)
+            self._draw_feedback(img, landmarks, info, 1.0, 1.0)
 
         return info
 
@@ -336,6 +338,8 @@ class CursorController:
         self.smoother.reset()
         self.prev_x = None
         self.prev_y = None
+        self.z_history.clear()
+        self.tap_count = 0
 
     # ────────────────────────────────────────────────────
     #  VISUAL FEEDBACK (draws on the camera frame)
@@ -351,21 +355,6 @@ class CursorController:
         cv2.circle(img, (ix, iy), 14, (0, 255, 255), 2)    # cyan ring
         cv2.circle(img, (ix, iy), 4,  (0, 255, 255), -1)   # filled dot
 
-        # ── Draw thumb tip circle ──
-        tx = int(landmarks[4].x * w)
-        ty = int(landmarks[4].y * h)
-        cv2.circle(img, (tx, ty), 10, (255, 180, 0), 2)    # orange ring
-
-        # ── Draw line between thumb and index (pinch indicator) ──
-        pinch_color = (0, 255, 0) if left_dist < PINCH_THRESHOLD else (100, 100, 255)
-        cv2.line(img, (tx, ty), (ix, iy), pinch_color, 2)
-
-        # ── Draw line between thumb and middle (right-click indicator) ──
-        mx = int(landmarks[12].x * w)
-        my = int(landmarks[12].y * h)
-        rclick_color = (0, 165, 255) if right_dist < RIGHT_PINCH_THRESHOLD else (80, 80, 80)
-        cv2.line(img, (tx, ty), (mx, my), rclick_color, 1)
-
         # ── Status labels ──
         sx, sy = info['cursor_pos']
 
@@ -373,22 +362,20 @@ class CursorController:
         cv2.putText(img, f"Cursor: ({sx}, {sy})", (10, h - 70),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.50, (200, 200, 200), 1, cv2.LINE_AA)
 
-        # Pinch distance
-        cv2.putText(img, f"L-Pinch: {left_dist:.3f}", (10, h - 50),
+        # Gesture status
+        cv2.putText(img, f"Dragging: {'ON' if info.get('dragging') else 'OFF'}", (10, h - 50),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (180, 255, 180), 1, cv2.LINE_AA)
-        cv2.putText(img, f"R-Pinch: {right_dist:.3f}", (10, h - 32),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (180, 200, 255), 1, cv2.LINE_AA)
 
         # ── Flash "CLICK" / "RIGHT CLICK" / "DRAGGING" ──
-        if info['left_click']:
+        if info.get('left_click'):
             cv2.putText(img, "LEFT CLICK", (w // 2 - 80, h // 2),
                         cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 255, 0), 2, cv2.LINE_AA)
 
-        if info['right_click']:
+        if info.get('right_click'):
             cv2.putText(img, "RIGHT CLICK", (w // 2 - 90, h // 2 + 40),
                         cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 165, 255), 2, cv2.LINE_AA)
 
-        if info['dragging']:
+        if info.get('dragging'):
             cv2.putText(img, "DRAGGING", (w // 2 - 65, h // 2 - 40),
                         cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 200, 255), 2, cv2.LINE_AA)
 

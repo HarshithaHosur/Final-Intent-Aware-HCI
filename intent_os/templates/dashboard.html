@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="dashboard-header fade-in">
+    <h1>System Diagnostic</h1>
+    <div class="uptime">Uptime: 142:12:04</div>
+</div>
+
+<div class="dashboard-top-cards fade-in">
+    <div class="top-card">
+        <div class="card-icon-header">
+            <span class="icon lightning">⚡</span>
+            <span class="badge critical">CRITICAL</span>
+        </div>
+        <div class="card-title">Status</div>
+        <div class="card-value cyan-text">System<br>Active</div>
+    </div>
+    <div class="top-card">
+        <div class="card-icon-header">
+            <span class="icon pointer">↗</span>
+        </div>
+        <div class="card-title">Control Mode</div>
+        <div class="card-value">Cursor Hybrid</div>
+    </div>
+    <div class="top-card">
+        <div class="card-icon-header" style="position:relative;">
+            <span class="icon wave" style="font-size:24px;">|||</span>
+            <span class="dot-small"></span>
+        </div>
+        <div class="card-title">Voice Layer</div>
+        <div class="card-value purple-text">Listening...</div>
+    </div>
+    <div class="top-card">
+        <div class="card-icon-header">
+            <span class="icon history">↺</span>
+        </div>
+        <div class="card-title">Last Command</div>
+        <div class="card-value" id="last-command-value">"None"</div>
+    </div>
+</div>
+
+<div class="dashboard-main-grid fade-in">
+    <div class="grid-left">
+        <div class="panel-section">
+            <div class="panel-header">
+                <div class="panel-title-group">
+                    <h2>Gesture Mapping</h2>
+                    <p>Configure spatial intent triggers</p>
+                </div>
+                <button class="btn-cyan-small">Add New</button>
+            </div>
+            <div class="gesture-list">
+                <div class="gesture-item">
+                    <div class="gesture-icon-box"><span class="icon">👆</span></div>
+                    <div class="gesture-info">
+                        <div class="g-name">Swipe Right</div>
+                        <div class="g-type">System Trigger</div>
+                    </div>
+                    <div class="gesture-arrow">→</div>
+                    <div class="gesture-action">Increase Volume</div>
+                    <button class="btn-trash">🗑</button>
+                </div>
+                <div class="gesture-item">
+                    <div class="gesture-icon-box pinch"><span class="icon">🤏</span></div>
+                    <div class="gesture-info">
+                        <div class="g-name">Two Finger Pinch</div>
+                        <div class="g-type">Cursor Trigger</div>
+                    </div>
+                    <div class="gesture-arrow">→</div>
+                    <div class="gesture-action">Select / Click</div>
+                    <button class="btn-trash">🗑</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-header" style="margin-bottom: 15px;">
+                <div class="panel-title-group">
+                    <h2>Neural Identity</h2>
+                    <p>Personalize your system's activation phrase.</p>
+                </div>
+            </div>
+            <div class="neural-identity-box">
+                <div class="input-with-icon">
+                    <span class="icon">🗣</span>
+                    <input type="text" value="Hello Nova" class="dark-input">
+                </div>
+                <button class="btn-purple-save">Save Wake Phrase</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid-right">
+        <div class="right-panel-box">
+            <h3 class="box-title"><span style="color:var(--accent-cyan); margin-right:8px;">≡</span> ACTIVE MODULES</h3>
+            <div class="module-list">
+                <div class="module-item">
+                    <span><span style="color:var(--accent-cyan); margin-right:8px;">🖐</span> Spatial Gestures</span>
+                    <label class="toggle-switch"><input type="checkbox" checked><span class="slider cyan-slider"></span></label>
+                </div>
+                <div class="module-item">
+                    <span><span style="color:#8c9bb4; margin-right:8px;">🗣</span> Voice Commands</span>
+                    <label class="toggle-switch"><input type="checkbox"><span class="slider"></span></label>
+                </div>
+                <div class="module-item">
+                    <span><span style="color:var(--accent-purple); margin-right:8px;">👁</span> Eye Tracking</span>
+                    <label class="toggle-switch"><input type="checkbox" checked><span class="slider cyan-slider"></span></label>
+                </div>
+            </div>
+        </div>
+
+        <div class="right-panel-box">
+            <h3 class="box-title"><span style="color:var(--accent-cyan); margin-right:8px;">📊</span> LIVE ACTIVITY</h3>
+            <div class="activity-list" id="live-activity-feed">
+                <div style="color: var(--text-secondary); font-size: 12px; padding: 10px 0;">Connecting to stream...</div>
+            </div>
+        </div>
+
+        <div class="right-panel-box">
+            <h3 class="box-title"><span style="color:var(--accent-cyan); margin-right:8px;">⚡</span> RECENT COMMANDS</h3>
+            <div class="activity-list" id="recent-commands-list">
+                <div style="color: var(--text-secondary); font-size: 12px; padding: 10px 0;">Waiting for commands...</div>
+            </div>
+        </div>
+
+        <div class="right-panel-box quick-insight" style="position:relative; overflow:hidden;">
+            <!-- Simple wave background -->
+            <svg style="position:absolute; bottom:0; left:0; width:100%; height:40px; opacity:0.1; pointer-events:none;" viewBox="0 0 100 20" preserveAspectRatio="none">
+                <path d="M0,10 Q25,20 50,10 T100,10 L100,20 L0,20 Z" fill="var(--accent-cyan)"/>
+                <path d="M0,15 Q25,5 50,15 T100,15 L100,20 L0,20 Z" fill="var(--accent-purple)"/>
+            </svg>
+            <h3 class="box-title" style="color:var(--text-primary); border-bottom: none;"><span style="color:var(--accent-cyan); margin-right:8px;">📈</span> Quick Insight</h3>
+            <p>To activate manual override,<br>hold a palm-up gesture for 3 seconds.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

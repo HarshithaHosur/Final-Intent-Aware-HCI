@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="settings-header">
+    <h3>SYSTEM > VOICE_CONTROLS</h3>
+    <h1>Acoustic Intent Interface</h1>
+    <p>Define the primary vocal anchors and semantic commands for neural-acoustic system activation.</p>
+</div>
+
+<div class="split-layout">
+    <!-- LEFT PANEL -->
+    <div class="left-panel" id="voice-list">
+        <!-- Rendered via JS -->
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="right-panel" id="voice-details" style="display: flex;">
+        
+        <!-- WAKE WORD SECTION (Always visible or visible when nothing selected) -->
+        <div class="detail-card fade-in" id="wake-word-card">
+            <h4>🔊 Wake Phrase Configuration</h4>
+            <div class="detail-content" style="margin-bottom: 20px;">
+                Define the primary vocal anchor for system activation. The system will only listen for commands after hearing this phrase.
+            </div>
+            <div class="wake-word-section">
+                <input type="text" id="wake-word-input" class="input-field" value="System">
+                <button class="btn-secondary" id="save-wake-word-btn">APPLY</button>
+            </div>
+        </div>
+
+        <div id="dynamic-voice-details" style="display: none; flex-direction: column; gap: 25px;">
+            <div class="detail-card fade-in">
+                <h4>🎤 How to Speak</h4>
+                <div class="detail-content" id="voice-how-to">
+                    "Say: System open chrome"
+                </div>
+            </div>
+
+            <div class="detail-card fade-in" style="animation-delay: 0.1s;">
+                <h4>🧠 Recognition Tips</h4>
+                <div class="detail-content">
+                    <ul id="voice-tips" style="padding-left: 20px;">
+                        <li>Speak clearly</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="detail-card fade-in" style="animation-delay: 0.2s;">
+                <h4>⚙️ Command Mapping</h4>
+                <div class="action-mapper">
+                    <label>Assign Action</label>
+                    <select id="voice-action-select" class="select-dropdown">
+                        <option value="Launch Chrome">Launch Chrome</option>
+                        <option value="Next Slide">Next Slide</option>
+                        <option value="Increase Volume">Increase Volume</option>
+                        <option value="Lock Screen">Lock Screen</option>
+                    </select>
+                    <br>
+                    <button class="btn-primary" id="save-voice-btn">Save Command</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

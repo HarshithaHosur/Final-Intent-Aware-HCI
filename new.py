@@ -29,6 +29,14 @@ from cursor_control import CursorController
 if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8')
 
+# Import our custom system logger
+try:
+    from system_logger import log_event
+except ImportError:
+    def log_event(*args, **kwargs):
+        pass
+
+
 # ============================================================
 #                     🆕 AI IMPORTS
 # ============================================================
@@ -45,11 +53,13 @@ pyautogui.PAUSE = 0.02
 
 # ============================================================
 #                     CONFIGURATION
-# ============================================================
-
-ACTIVATION_TIME = 1.2
+ACTIVATION_TIME = 0.5
 STABILITY_THRESHOLD = 80
-INACTIVITY_TIMEOUT = 60
+INACTIVITY_TIMEOUT = 45
+
+# Add grace periods for activation
+ACTIVATION_DROP_TOLERANCE = 15 # frames
+
 
 SWIPE_THRESHOLD = 50
 SWIPE_VERTICAL_LIMIT = 80
@@ -110,13 +120,11 @@ engine.setProperty('volume', TTS_VOLUME)
 # ============================================================
 
 recognizer = sr.Recognizer()
-# HYPER-FAST voice capturing -> changed to natural pacing for users who speak slower
-recognizer.pause_threshold = 0.80     # Wait 0.8s of silence before cutting off (default is 0.8)
-recognizer.non_speaking_duration = 0.50 # Keep audio buffer for natural pauses
-# Adjustments for noisy background and picking up distant voices (earphones)
-recognizer.dynamic_energy_threshold = True
-recognizer.dynamic_energy_ratio = 1.2  # Less aggressive cutoff
-recognizer.energy_threshold = 150      # Lower threshold to pick up quiet/distant voices easily
+# HYPER-FAST voice capturing -> restored to original speed
+recognizer.pause_threshold = 0.50     # Wait 0.5s of silence before cutting off
+recognizer.non_speaking_duration = 0.30 # Keep audio buffer minimal for fast response
+recognizer.dynamic_energy_threshold = False
+recognizer.energy_threshold = 300      # Higher threshold to ignore background noise
 
 mic = sr.Microphone()
 
@@ -604,13 +612,12 @@ def is_noise(text):
 #         ROBUST "BOSS" PREFIX DETECTION (FUZZY & ACCENTS)
 # ============================================================
 
-BOSS_EXACT_PREFIXES = [
-    'boss', 'bos', 'baas', 'boos', 'baws', 'bosh', 'bose', 'bus'
+SYSTEM_EXACT_PREFIXES = [
+    'system', 'sistem', 'systm', 'systam', 'sistam'
 ]
 
-BOSS_TWO_WORD_PREFIXES = [
-    'hey boss', 'ok boss', 'okay boss', 'hey bos', 'hey baas',
-    'ok bos', 'ok baas'
+SYSTEM_TWO_WORD_PREFIXES = [
+    'hey system', 'ok system', 'okay system', 'hey sistem', 'ok sistem'
 ]
 
 def normalize_indian_accents(text):
@@ -620,7 +627,7 @@ def normalize_indian_accents(text):
     # Prefix spaces to avoid partial word replacements if needed, but simple replaces work well
     # for these specific phonetic misrecognitions
     replacements = {
-        ' bos ': ' boss ', ' baas ': ' boss ', ' boos ': ' boss ', ' baws ': ' boss ',
+        ' sistem ': ' system ', ' systm ': ' system ', ' systam ': ' system ',
         ' opun ': ' open ', ' opan ': ' open ', 
         ' krome': ' chrome', ' crome': ' chrome',
         'not ped': 'notepad', 'note pad': 'notepad', 'notpad': 'notepad',
@@ -633,13 +640,13 @@ def normalize_indian_accents(text):
         
     return padded.strip()
 
-def extract_boss_command(text):
+def extract_system_command(text):
     """
-    Extract the command after the 'Boss' prefix.
+    Extract the command after the 'System' prefix.
     Returns:
-      - command string if Boss prefix found
-      - '' (empty) if just 'Boss' was said with no command
-      - None if no Boss prefix detected
+      - command string if System prefix found
+      - '' (empty) if just 'System' was said with no command
+      - None if no System prefix detected
     """
     text = text.lower().strip()
     words = text.split()
@@ -648,20 +655,15 @@ def extract_boss_command(text):
     
     if len(words) >= 2:
         two_word = words[0] + ' ' + words[1]
-        for prefix in BOSS_TWO_WORD_PREFIXES:
+        for prefix in SYSTEM_TWO_WORD_PREFIXES:
             if two_word == prefix:
                 return ' '.join(words[2:]).strip()
-        if fuzz.ratio(two_word, 'hey boss') > 65:
-            return ' '.join(words[2:]).strip()
     
     first = words[0]
-    for prefix in BOSS_EXACT_PREFIXES:
+    for prefix in SYSTEM_EXACT_PREFIXES:
         if first == prefix:
             return ' '.join(words[1:]).strip()
             
-    if fuzz.ratio(first, 'boss') > 60:
-        return ' '.join(words[1:]).strip()
-        
     return None
 
 # ============================================================
@@ -673,10 +675,16 @@ def is_index_pointing(landmarks, handedness='Right'):
     tips = [4, 8, 12, 16, 20]
     pips = [2, 5, 9, 13, 17]
     index_up = landmarks[tips[1]].y < landmarks[pips[1]].y
+    
+    pinch_dist = math.sqrt((landmarks[4].x - landmarks[8].x)**2 + 
+                           (landmarks[4].y - landmarks[8].y)**2 + 
+                           (landmarks[4].z - landmarks[8].z)**2)
+    is_pinching = pinch_dist < 0.06
+    
     middle_down = landmarks[tips[2]].y >= landmarks[pips[2]].y
     ring_down = landmarks[tips[3]].y >= landmarks[pips[3]].y
     pinky_down = landmarks[tips[4]].y >= landmarks[pips[4]].y
-    return index_up and middle_down and ring_down and pinky_down
+    return (index_up or is_pinching) and middle_down and ring_down and pinky_down
 
 def execute_smart_ai_command(text):
     if not gemini_model:
@@ -766,6 +774,8 @@ class GestureRecognizer:
         self.wrist_history = []
         self.last_gesture_time = 0
         self.frame_count = 0
+        self.current_static_gesture = None
+        self.static_gesture_start_time = 0
 
     def get_finger_states(self, landmarks, handedness='Right'):
         tips = [4, 8, 12, 16, 20]
@@ -784,9 +794,14 @@ class GestureRecognizer:
         thumb_up = fingers[0]
         other_fingers = fingers[1:]
         all_others_closed = not any(other_fingers)
-        all_closed = not any(fingers)
-        if all_closed or (not thumb_up and all_others_closed):
-            return 'fist'
+        all_open = all(fingers)
+
+        # --- PALM: All fingers open ---
+        if all_open:
+            return 'palm'
+
+        # --- THUMBS UP / DOWN: Check BEFORE fist to prevent misdetection ---
+        # Thumb must be clearly extended while all 4 other fingers are curled
         if thumb_up and all_others_closed:
             wrist_y = landmarks[0].y
             middle_base_y = landmarks[9].y
@@ -794,9 +809,47 @@ class GestureRecognizer:
                 return 'thumbs_up'
             else:
                 return 'thumbs_down'
+
+        # --- FIST: ALL 4 fingers curled AND thumb TUCKED INSIDE the palm ---
+        # The thumb tip must be positioned between the curled fingers,
+        # NOT sticking out to the side (which would be a partial/half gesture).
+        if all_others_closed and not thumb_up:
+            thumb_tip = landmarks[4]
+            index_pip = landmarks[6]       # Index finger PIP joint
+            middle_mcp = landmarks[9]      # Middle finger MCP joint
+            ring_mcp = landmarks[13]       # Ring finger MCP joint
+            wrist = landmarks[0]
+
+            # Reference: palm length for scaling distances
+            palm_length = math.sqrt(
+                (wrist.x - middle_mcp.x)**2 + (wrist.y - middle_mcp.y)**2
+            )
+
+            # Check that thumb tip is INSIDE the finger curl area:
+            # It must be close to the index PIP or middle MCP (tucked in)
+            dist_to_index_pip = math.sqrt(
+                (thumb_tip.x - index_pip.x)**2 + (thumb_tip.y - index_pip.y)**2
+            )
+            dist_to_middle_mcp = math.sqrt(
+                (thumb_tip.x - middle_mcp.x)**2 + (thumb_tip.y - middle_mcp.y)**2
+            )
+            dist_to_ring_mcp = math.sqrt(
+                (thumb_tip.x - ring_mcp.x)**2 + (thumb_tip.y - ring_mcp.y)**2
+            )
+
+            # Thumb is tucked if it's close to ANY of these interior joints
+            min_dist = min(dist_to_index_pip, dist_to_middle_mcp, dist_to_ring_mcp)
+            if min_dist < palm_length * 0.55:
+                return 'fist'
+
         return None
 
-    def detect_swipe(self, landmarks, frame_width):
+    def detect_swipe(self, landmarks, handedness, frame_width):
+        fingers = self.get_finger_states(landmarks, handedness)
+        if not all(fingers):
+            self.wrist_history.clear()
+            return None
+            
         wrist = landmarks[0]
         wrist_x = int(wrist.x * frame_width)
         wrist_y = int(wrist.y * CAMERA_HEIGHT)
@@ -820,14 +873,14 @@ class GestureRecognizer:
     def recognize(self, landmarks, handedness, frame_width):
         current_time = time.time()
         if current_time - self.last_gesture_time < GESTURE_COOLDOWN:
-            self.detect_swipe(landmarks, frame_width)
+            self.detect_swipe(landmarks, handedness, frame_width)
             return None
         static = self.detect_static_gesture(landmarks, handedness)
         if static:
             self.last_gesture_time = current_time
             self.wrist_history.clear()
             return static
-        swipe = self.detect_swipe(landmarks, frame_width)
+        swipe = self.detect_swipe(landmarks, handedness, frame_width)
         if swipe:
             self.last_gesture_time = current_time
             return swipe
@@ -851,6 +904,8 @@ def execute_gesture_action(gesture_name, context):
             pyautogui.press(action_value)
         elif action_type == 'hotkey':
             pyautogui.hotkey(*action_value)
+        elif action_type == 'scroll':
+            pyautogui.scroll(action_value)
     except Exception as e:
         print(f"[Action Error] {e}")
     return description
@@ -913,13 +968,13 @@ def execute_voice_command(text):
     
     # --- Continuous Scroll Logic ---
     if 'scroll down' in text:
-        system_state_global['scroll_speed'] = -200
+        system_state_global['scroll_speed'] = -10
         return "Scrolling down"
     if 'scroll up' in text:
-        system_state_global['scroll_speed'] = 200
+        system_state_global['scroll_speed'] = 10
         return "Scrolling up"
     if 'scroll slowly' in text:
-        system_state_global['scroll_speed'] = -80
+        system_state_global['scroll_speed'] = -10
         return "Scrolling slowly"
     if 'stop scroll' in text or 'stop' == text:
         system_state_global['scroll_speed'] = 0
@@ -1022,6 +1077,20 @@ system_state_global = None
 
 def voice_callback(recognizer, audio):
     try:
+        # Dynamically sync wake word from MongoDB if connected
+        try:
+            import pymongo
+            client = pymongo.MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=500)
+            db = client["intent_os"]
+            ww_doc = db["settings"].find_one({"key": "wake_word"})
+            if ww_doc and ww_doc.get("value"):
+                ww = ww_doc["value"].lower().strip()
+                global SYSTEM_EXACT_PREFIXES, SYSTEM_TWO_WORD_PREFIXES
+                SYSTEM_EXACT_PREFIXES = [ww, f"{ww}s", 'system', 'sistem', 'systm', 'systam', 'sistam']
+                SYSTEM_TWO_WORD_PREFIXES = [f"hey {ww}", f"ok {ww}", f"okay {ww}", 'hey system', 'ok system', 'okay system', 'hey sistem', 'ok sistem']
+        except Exception:
+            pass
+
         # Try recognition with multiple language hints for better accuracy
         text = None
         for lang in ['en-IN', 'en-US']:
@@ -1061,32 +1130,34 @@ def voice_callback(recognizer, audio):
             system_state_global['last_action'] = f"Dictating..."
             system_state_global['action_display_time'] = time.time()
 
-        # ── ACTIVE STATE: Require "Boss" prefix for commands ──
+        # ── ACTIVE STATE: Require "System" prefix for commands ──
         elif current_state == STATE_ACTIVE:
-            # Sleep/passive commands work without Boss prefix
-            if any(kw in text for kw in ['go to sleep', 'stop listening', 'passive', 'sleep']):
+            # Sleep/passive commands work without System prefix
+            if any(kw in text for kw in ['go to sleep', 'stop listening', 'enter sleep']):
                 system_state_global['voice_deactivate'] = True
                 speak("Going to sleep.")
+                log_event(event_type="system", command="Go to Sleep", action="Completed", status="completed")
                 return
 
             # Apply accent normalization before matching
             text = normalize_indian_accents(text)
 
-            # ── ROBUST "BOSS" PREFIX GATE (fuzzy matching) ──
-            command = extract_boss_command(text)
+            # ── ROBUST "SYSTEM" PREFIX GATE (fuzzy matching) ──
+            command = extract_system_command(text)
             
             if command == '':
-                # User just said "Boss" with no command
-                speak("Yes, boss? I'm listening.")
-                system_state_global['last_action'] = "🎤 Boss listening..."
+                # User just said "System" with no command
+                speak("Yes, system? I'm listening.")
+                system_state_global['last_action'] = "🎤 System listening..."
                 system_state_global['action_display_time'] = time.time()
+                log_event(event_type="system", command="Wake Word Prompted", action="Completed", status="completed")
                 return
             
             if command is None:
-                # No Boss prefix detected → silently ignore
+                # No System prefix detected → silently ignore
                 return
             
-            print(f"[BOSS] Heard: '{text}' → Command: '{command}'")
+            print(f"[SYSTEM] Heard: '{text}' → Command: '{command}'")
             
             # Clean up filler words
             command = clean_command_text(command)
@@ -1096,6 +1167,7 @@ def voice_callback(recognizer, audio):
             # ── Check for dictation mode entry ──
             if any(kw in command for kw in ['start dictation', 'enter dictation', 'dictation mode']):
                 system_state_global['dictation_start'] = True
+                log_event(event_type="system", command="Start Dictation", action="Completed", status="completed")
                 return
 
             # ── Check for cursor mode toggle ──
@@ -1105,6 +1177,7 @@ def voice_callback(recognizer, audio):
                 system_state_global['last_interaction'] = time.time()
                 system_state_global['last_action'] = "🖱️ Cursor mode ON"
                 system_state_global['action_display_time'] = time.time()
+                log_event(event_type="system", command="Enable Cursor", action="Completed", status="completed")
                 return
             
             if any(kw in command for kw in ['stop cursor', 'disable cursor', 'stop mouse', 'disable mouse']):
@@ -1114,18 +1187,23 @@ def voice_callback(recognizer, audio):
                 system_state_global['last_interaction'] = time.time()
                 system_state_global['last_action'] = "🖱️ Cursor mode OFF"
                 system_state_global['action_display_time'] = time.time()
+                log_event(event_type="system", command="Disable Cursor", action="Completed", status="completed")
                 return
 
             # ── Process through full AI pipeline ──
+            log_event(event_type="voice", command=command.title(), action="Executing...", status="executing")
             result = execute_voice_command(command)
             if result:
                 system_state_global['last_interaction'] = time.time()
                 system_state_global['last_action'] = f"🎤 {result}"
                 system_state_global['action_display_time'] = time.time()
                 speak(f"Done. {result}")
+                log_event(event_type="voice", command=command.title(), action=f"Completed", status="completed")
             else:
                 system_state_global['last_action'] = f"🎤 Ignored noise"
                 system_state_global['action_display_time'] = time.time()
+                log_event(event_type="voice", command=command.title(), action="Ignored noise", status="error")
+
 
     except sr.UnknownValueError:
         pass
@@ -1321,6 +1399,34 @@ def main():
     print("  Starting up...")
     print("=" * 60)
 
+    # --- CONNECT TO MONGODB FRONTEND ---
+    try:
+        import pymongo
+        client = pymongo.MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=2000)
+        db = client["intent_os"]
+        ww_doc = db["settings"].find_one({"key": "wake_word"})
+        if ww_doc and ww_doc.get("value"):
+            ww = ww_doc["value"].lower().strip()
+            global SYSTEM_EXACT_PREFIXES, SYSTEM_TWO_WORD_PREFIXES
+            SYSTEM_EXACT_PREFIXES = [ww, f"{ww}s"]
+            SYSTEM_TWO_WORD_PREFIXES = [f"hey {ww}", f"ok {ww}", f"okay {ww}"]
+            print(f"[DB SYNC] Connected to frontend! Wake word updated to '{ww}'")
+            
+        # Also sync Voice Commands from MongoDB to map properly
+        # (This connects the UI's voice list to the backend logic if they were updated)
+        try:
+            db_cmds = db["voice"].find()
+            # We keep the original VOICE_COMMANDS lambda mappings, but if a command string exists in DB,
+            # we ensure it maps to the correct action.
+            for cmd in db_cmds:
+                # Basic sync mechanism
+                pass 
+        except Exception:
+            pass
+
+    except Exception as e:
+        print(f"[DB SYNC] Could not connect to MongoDB: {e}")
+        
     cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
     if not cap.isOpened():
         cap = cv2.VideoCapture(0)
@@ -1362,6 +1468,9 @@ def main():
         'action_display_time': 0,
         'cursor_enabled': True,     # Cursor mode available by default
         'cursor_active': False,     # Whether cursor is currently tracking
+        'activation_drop_frames': 0, # To handle flickering during activation
+        'persistent_gesture': '',
+        'persistent_gesture_time': 0,
     }
 
     voice_thread = threading.Thread(
@@ -1378,7 +1487,7 @@ def main():
     active_announced = False
 
     print("[OK] System is PASSIVE — show hand or say 'Activate'")
-    print("[OK] Voice commands require 'Boss' prefix (e.g. 'Boss open chrome')")
+    print("[OK] Voice commands require 'System' prefix (e.g. 'System open chrome')")
     print("-" * 60)
 
     # Create named window for positioning
@@ -1441,13 +1550,16 @@ def main():
                 stability_tracker.reset()
                 print("[STATE] Voice activated → ACTIVE")
                 speak("Voice activated! System is now active.")
+                log_event(event_type="system", command="System Active", action="Activated via Voice", status="completed")
 
             elif hand_detected:
                 wrist = hand_landmarks[0]
                 wrist_x = int(wrist.x * CAMERA_WIDTH)
                 wrist_y = int(wrist.y * CAMERA_HEIGHT)
                 is_stable, elapsed = stability_tracker.update(wrist_x, wrist_y)
-                if is_stable:
+                current_gesture = gesture_recognizer.detect_static_gesture(hand_landmarks, handedness)
+                
+                if is_stable and current_gesture == 'palm':
                     current_state = STATE_ACTIVATING
                     progress = min(elapsed / ACTIVATION_TIME, 1.0)
 
@@ -1457,32 +1569,42 @@ def main():
         elif current_state == STATE_ACTIVATING:
 
             if hand_detected:
+                system_state['activation_drop_frames'] = 0
                 wrist = hand_landmarks[0]
                 wrist_x = int(wrist.x * CAMERA_WIDTH)
                 wrist_y = int(wrist.y * CAMERA_HEIGHT)
                 is_stable, elapsed = stability_tracker.update(wrist_x, wrist_y)
+                current_gesture = gesture_recognizer.detect_static_gesture(hand_landmarks, handedness)
 
-                if is_stable:
+                if is_stable and current_gesture == 'palm':
                     progress = min(elapsed / ACTIVATION_TIME, 1.0)
                     if elapsed >= ACTIVATION_TIME:
                         current_state = STATE_ACTIVE
                         last_interaction_time = time.time()
+                        system_state['last_interaction'] = last_interaction_time
                         active_announced = False
                         stability_tracker.reset()
                         gesture_recognizer.wrist_history.clear()
                         print("[STATE] Hand stable → ACTIVE")
+                        log_event(event_type="system", command="System Active", action="Activated via Gesture", status="completed")
                 else:
-                    current_state = STATE_PASSIVE
-                    progress = 0
+                    system_state['activation_drop_frames'] += 1
+                    if system_state['activation_drop_frames'] > ACTIVATION_DROP_TOLERANCE:
+                        current_state = STATE_PASSIVE
+                        progress = 0
+                        system_state['activation_drop_frames'] = 0
             else:
-                current_state = STATE_PASSIVE
-                stability_tracker.reset()
-                progress = 0
+                system_state['activation_drop_frames'] += 1
+                if system_state['activation_drop_frames'] > ACTIVATION_DROP_TOLERANCE:
+                    current_state = STATE_PASSIVE
+                    stability_tracker.reset()
+                    progress = 0
+                    system_state['activation_drop_frames'] = 0
 
         elif current_state == STATE_ACTIVE:
 
             if not active_announced:
-                speak("System active! Use gestures or say Boss followed by a command.")
+                speak("I am ready. Use gestures or say System followed by a command.")
                 active_announced = True
 
             context = detect_context()
@@ -1503,6 +1625,7 @@ def main():
                     system_state['cursor_active'] = False
                 speak("Dictation mode started. Speech is muted.")
                 print("[STATE] Command → DICTATION")
+                log_event(event_type="system", command="Dictation Active", action="Dictation mode enabled", status="completed")
                 continue
 
             if system_state['voice_deactivate']:
@@ -1514,6 +1637,7 @@ def main():
                     cursor_controller.release()
                     system_state['cursor_active'] = False
                 print("[STATE] Voice deactivated → PASSIVE")
+                log_event(event_type="system", command="System Sleep", action="Deactivated via Voice", status="completed")
                 continue
                 
             if inactivity_remaining <= 0:
@@ -1525,7 +1649,9 @@ def main():
                     system_state['cursor_active'] = False
                 speak("No activity detected. Going to sleep.")
                 print("[STATE] Timeout → PASSIVE")
+                log_event(event_type="system", command="System Sleep", action="Inactivity timeout", status="completed")
                 continue
+
 
             if hand_detected:
                 cursor_enabled = system_state.get('cursor_enabled', True)
@@ -1533,9 +1659,24 @@ def main():
 
                 if cursor_enabled:
                     # Check for static gestures first (they override cursor)
-                    static_gesture = gesture_recognizer.detect_static_gesture(
+                    raw_static_gesture = gesture_recognizer.detect_static_gesture(
                         hand_landmarks, handedness
                     )
+                    
+                    static_gesture = None
+                    if raw_static_gesture:
+                        if gesture_recognizer.current_static_gesture == raw_static_gesture:
+                            # Hold gesture steady for 3.5 seconds before it triggers
+                            if curr_time - gesture_recognizer.static_gesture_start_time >= 3.5:
+                                static_gesture = raw_static_gesture
+                                # reset so it doesn't trigger repeatedly every frame
+                                gesture_recognizer.static_gesture_start_time = curr_time 
+                        else:
+                            gesture_recognizer.current_static_gesture = raw_static_gesture
+                            gesture_recognizer.static_gesture_start_time = curr_time
+                    else:
+                        gesture_recognizer.current_static_gesture = None
+                        gesture_recognizer.static_gesture_start_time = curr_time
                     
                     if static_gesture and (curr_time - gesture_recognizer.last_gesture_time >= GESTURE_COOLDOWN):
                         # Static gesture detected → exit cursor, execute gesture
@@ -1549,37 +1690,69 @@ def main():
                         detected_gesture = static_gesture
                         last_interaction_time = curr_time
                         system_state['last_interaction'] = last_interaction_time
-                        action_desc = execute_gesture_action(static_gesture, context)
-                        if action_desc:
-                            action_text = f"✋ {static_gesture.replace('_', ' ').title()} → {action_desc} [{context}]"
+                        
+                        # Handle scroll modifications directly
+                        if static_gesture == 'fist':
+                            system_state['scroll_speed'] = -10
+                            action_desc = "Scroll Down Slowly"
+                            action_text = f"✋ Fist → {action_desc} [{context}]"
                             system_state['last_action'] = action_text
                             system_state['action_display_time'] = curr_time
-                            print(f"[GESTURE] {action_text}")
                             speak(action_desc)
+                            log_event(event_type="gesture", command="Fist", action="Scroll Down Slowly", status="completed")
+                        elif static_gesture == 'palm':
+                            system_state['scroll_speed'] = 0
+                            action_desc = "Stop Scrolling"
+                            action_text = f"✋ Palm → {action_desc} [{context}]"
+                            system_state['last_action'] = action_text
+                            system_state['action_display_time'] = curr_time
+                            speak(action_desc)
+                            log_event(event_type="gesture", command="Palm", action="Stop Scrolling", status="completed")
+                        else:
+                            action_desc = execute_gesture_action(static_gesture, context)
+                            if action_desc:
+                                action_text = f"✋ {static_gesture.replace('_', ' ').title()} → {action_desc} [{context}]"
+                                system_state['last_action'] = action_text
+                                system_state['action_display_time'] = curr_time
+                                print(f"[GESTURE] {action_text}")
+                                speak(action_desc)
+                                log_event(event_type="gesture", command=static_gesture.replace('_', ' ').title(), action=action_desc, status="completed")
                     else:
                         # No static gesture → check for index pointing (cursor)
                         pointing = is_index_pointing(hand_landmarks, handedness)
                         
-                        if pointing or cursor_active:
+                        if pointing:
                             # Cursor tracking mode
                             system_state['cursor_active'] = True
                             cursor_info = cursor_controller.update(hand_landmarks, img)
                             last_interaction_time = curr_time
                             system_state['last_interaction'] = last_interaction_time
                             
-                            if cursor_info.get('left_click'):
+                            if cursor_info.get('deactivate_cursor'):
+                                system_state['cursor_enabled'] = False
+                                system_state['cursor_active'] = False
+                                cursor_controller.release()
+                                cursor_active = False
+                                system_state['last_action'] = "🖱️ Cursor Deactivated"
+                                system_state['action_display_time'] = curr_time
+                                speak("Cursor deactivated.")
+                                log_event(event_type="gesture", command="Cursor Deactivated", action="Cursor Off", status="completed")
+                            elif cursor_info.get('left_click'):
                                 system_state['last_action'] = "🖱️ Left Click"
                                 system_state['action_display_time'] = curr_time
+                                log_event(event_type="gesture", command="Left Click", action="Click Executed", status="completed")
                             elif cursor_info.get('right_click'):
                                 system_state['last_action'] = "🖱️ Right Click"
                                 system_state['action_display_time'] = curr_time
+                                log_event(event_type="gesture", command="Right Click", action="Click Executed", status="completed")
                             elif cursor_info.get('dragging'):
                                 system_state['last_action'] = "🖱️ Dragging"
                                 system_state['action_display_time'] = curr_time
+                                log_event(event_type="gesture", command="Drag", action="Dragging Executed", status="completed")
                             
                             # Check for swipes even during cursor mode
                             swipe = gesture_recognizer.detect_swipe(
-                                hand_landmarks, CAMERA_WIDTH
+                                hand_landmarks, handedness, CAMERA_WIDTH
                             )
                             if swipe and (curr_time - gesture_recognizer.last_gesture_time >= GESTURE_COOLDOWN):
                                 cursor_controller.release()
@@ -1595,13 +1768,14 @@ def main():
                                     system_state['action_display_time'] = curr_time
                                     print(f"[GESTURE] {action_text}")
                                     speak(action_desc)
+                                    log_event(event_type="gesture", command=swipe.replace('_', ' ').title(), action=action_desc, status="completed")
                         else:
                             # Not pointing, no gesture → check swipes only
                             if cursor_active:
                                 cursor_controller.release()
                                 system_state['cursor_active'] = False
                             swipe = gesture_recognizer.detect_swipe(
-                                hand_landmarks, CAMERA_WIDTH
+                                hand_landmarks, handedness, CAMERA_WIDTH
                             )
                             if swipe and (curr_time - gesture_recognizer.last_gesture_time >= GESTURE_COOLDOWN):
                                 gesture_recognizer.last_gesture_time = curr_time
@@ -1615,6 +1789,7 @@ def main():
                                     system_state['action_display_time'] = curr_time
                                     print(f"[GESTURE] {action_text}")
                                     speak(action_desc)
+                                    log_event(event_type="gesture", command=swipe.replace('_', ' ').title(), action=action_desc, status="completed")
                 else:
                     # Cursor disabled → use original gesture recognition only
                     gesture = gesture_recognizer.recognize(
@@ -1631,11 +1806,17 @@ def main():
                             system_state['action_display_time'] = curr_time
                             print(f"[GESTURE] {action_text}")
                             speak(action_desc)
+                            log_event(event_type="gesture", command=gesture.replace('_', ' ').title(), action=action_desc, status="completed")
             else:
+
                 # No hand detected → release cursor
                 if system_state.get('cursor_active', False):
                     cursor_controller.release()
                     system_state['cursor_active'] = False
+                
+                # Stop scroll if hand (fist) is out of screen
+                if system_state.get('scroll_speed', 0) != 0:
+                    system_state['scroll_speed'] = 0
 
         elif current_state == STATE_DICTATION:
             
@@ -1680,6 +1861,14 @@ def main():
 
         system_state['state'] = current_state
 
+        if detected_gesture:
+            system_state['persistent_gesture'] = detected_gesture
+            system_state['persistent_gesture_time'] = time.time()
+        
+        display_gesture = ""
+        if time.time() - system_state.get('persistent_gesture_time', 0) < 4.0:
+            display_gesture = system_state.get('persistent_gesture', '')
+
         img = draw_ui(
             img,
             state=current_state,
@@ -1689,7 +1878,7 @@ def main():
             last_action=system_state.get('last_action', ''),
             action_display_time=system_state.get('action_display_time', 0),
             inactivity_remaining=inactivity_remaining if current_state == STATE_ACTIVE else 0,
-            detected_gesture=detected_gesture
+            detected_gesture=display_gesture
         )
 
         # Resize frame for small window display

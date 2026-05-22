@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="settings-header">
+    <h3>SYSTEM > GESTURE_CONTROLS</h3>
+    <h1>Kinetic Input Interface</h1>
+    <p>Configure high-precision hand tracking and spatial interaction triggers for AETHER_CORE environment control.</p>
+</div>
+
+<div class="split-layout">
+    <!-- LEFT PANEL -->
+    <div class="left-panel" id="gesture-list">
+        <!-- Rendered via JS -->
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="right-panel" id="gesture-details" style="display: none;">
+        <div class="detail-card fade-in">
+            <h4>🖐️ Gesture Preview</h4>
+            <div class="icon-preview" id="gesture-icon">✨</div>
+            <div class="detail-content" id="gesture-description">
+                Description goes here.
+            </div>
+        </div>
+
+        <div class="detail-card fade-in" style="animation-delay: 0.1s;">
+            <h4>⚙️ Function Mapping</h4>
+            <div class="action-mapper">
+                <label>Assign Action</label>
+                <select id="gesture-action-select" class="select-dropdown">
+                    <option value="Next Slide">Next Slide</option>
+                    <option value="Previous Slide">Previous Slide</option>
+                    <option value="Select / Click">Select / Click</option>
+                    <option value="Confirm Primary">Confirm Primary</option>
+                    <option value="Clear All HUD">Clear All HUD</option>
+                    <option value="Deactivate Cursor">Deactivate Cursor</option>
+                    <option value="Increase Volume">Increase Volume</option>
+                    <option value="Decrease Volume">Decrease Volume</option>
+                    <option value="Switch Workspace">Switch Workspace</option>
+                </select>
+                <br>
+                <button class="btn-primary" id="save-gesture-btn">Save Mapping</button>
+            </div>
+        </div>
+
+        <div class="detail-card fade-in" style="animation-delay: 0.2s;">
+            <h4>📍 Usage Context</h4>
+            <div class="detail-content" id="gesture-context">
+                <span class="status-badge" id="gesture-type">System Trigger</span>
+                <p style="margin-top: 10px;">Available globally across all active neural nodes and workspaces.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="settings-header fade-in">
+    <h3>SYSTEM DOCUMENTATION</h3>
+    <h1 style="font-size: 42px;">Master your <span style="color: var(--accent-cyan);">Intent.</span></h1>
+    <p style="max-width: 600px; line-height: 1.6;">Intuitive. Proactive. Infinitesimally fast. Welcome to the command center of the future. Explore the guides below to unlock the full potential of INTENT_OS.</p>
+</div>
+
+<div class="split-layout fade-in" style="flex-direction: column; overflow: visible;">
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+        <span class="icon" style="color: var(--accent-cyan); font-size: 24px;">▶</span>
+        <h2>Getting Started</h2>
+    </div>
+
+    <div class="detail-card" style="height: 400px; position: relative; overflow: hidden; padding: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at center, #1a2a3a 0%, var(--bg-card) 70%); border-color: rgba(0, 229, 255, 0.3);">
+        <!-- Placeholder for video -->
+        <div style="width: 80px; height: 80px; background: var(--accent-cyan); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10; box-shadow: 0 0 30px var(--accent-cyan-glow);">
+            <div style="width: 0; height: 0; border-top: 15px solid transparent; border-bottom: 15px solid transparent; border-left: 25px solid var(--bg-dark); margin-left: 10px;"></div>
+        </div>
+        <div style="position: absolute; bottom: 30px; text-align: center; width: 100%; font-family: var(--font-mono); font-weight: 600; letter-spacing: 2px;">WATCH CORE INITIALIZATION</div>
+        
+        <!-- Abstract background pattern -->
+        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.2; background-image: linear-gradient(var(--accent-cyan) 1px, transparent 1px), linear-gradient(90deg, var(--accent-cyan) 1px, transparent 1px); background-size: 50px 50px;"></div>
+    </div>
+</div>
+
+<!-- Floating input bar -->
+<div style="position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); width: 60%; background: rgba(19, 23, 32, 0.9); backdrop-filter: blur(10px); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px 20px; display: flex; align-items: center; gap: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index: 100;">
+    <span style="color: var(--accent-cyan); font-size: 20px;">⚡</span>
+    <input type="text" placeholder="Ask INTENT_OS for specific help..." style="flex: 1; background: transparent; border: none; color: var(--text-primary); font-family: var(--font-main); font-size: 14px; outline: none;">
+    <div style="display: flex; gap: 5px;">
+        <span style="background: var(--bg-dark); padding: 4px 8px; border-radius: 4px; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);">⌘</span>
+        <span style="background: var(--bg-dark); padding: 4px 8px; border-radius: 4px; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);">K</span>
+    </div>
+</div>
+{% endblock %}
