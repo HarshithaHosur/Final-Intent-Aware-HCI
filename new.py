@@ -57,6 +57,8 @@ ACTIVATION_TIME = 0.5
 STABILITY_THRESHOLD = 80
 INACTIVITY_TIMEOUT = 45
 
+import face_recognition
+
 # Add grace periods for activation
 ACTIVATION_DROP_TOLERANCE = 15 # frames
 
@@ -66,8 +68,8 @@ SWIPE_VERTICAL_LIMIT = 80
 GESTURE_COOLDOWN = 0.5
 SWIPE_FRAME_WINDOW = 8
 
-CAMERA_WIDTH = 640
-CAMERA_HEIGHT = 480
+CAMERA_WIDTH = 1280
+CAMERA_HEIGHT = 720
 CAMERA_FPS = 30
 
 VOICE_LISTEN_TIMEOUT = 2
@@ -83,6 +85,9 @@ STATE_PASSIVE = "PASSIVE"
 STATE_ACTIVATING = "ACTIVATING"
 STATE_ACTIVE = "ACTIVE"
 STATE_DICTATION = "DICTATION"
+STATE_LOGIN_WAITING = "LOGIN_WAITING"
+STATE_FACE_VERIFICATION = "FACE_VERIFICATION"
+STATE_FACE_REGISTRATION = "FACE_REGISTRATION"
 
 # ============================================================
 #                 MEDIAPIPE SETUP
@@ -1307,6 +1312,15 @@ def draw_ui(img, state, fps, progress=0, context="", last_action="",
     elif state == STATE_ACTIVATING:
         hdr_col = _C['hdr_activating']; acc_col = _C['acc_activating']
         lbl_col = _C['t_activating'];   lbl_txt = "ACTIVATING"
+    elif state == STATE_LOGIN_WAITING:
+        hdr_col = (40, 40, 40); acc_col = (0, 0, 255)
+        lbl_col = (50, 50, 255); lbl_txt = "LOGIN REQUIRED"
+    elif state == STATE_FACE_VERIFICATION:
+        hdr_col = (100, 80, 20); acc_col = (255, 165, 0)
+        lbl_col = (255, 200, 0); lbl_txt = "VERIFYING FACE"
+    elif state == STATE_FACE_REGISTRATION:
+        hdr_col = (100, 20, 80); acc_col = (255, 0, 165)
+        lbl_col = (255, 0, 200); lbl_txt = "REGISTERING FACE"
     else:
         hdr_col = _C['hdr_passive']; acc_col = _C['acc_passive']
         lbl_col = _C['t_passive'];   lbl_txt = "SYSTEM PASSIVE"
@@ -1322,6 +1336,24 @@ def draw_ui(img, state, fps, progress=0, context="", last_action="",
 
     if state == STATE_PASSIVE:
         hint = "SHOW  HAND   or   SAY  'ACTIVATE'"
+        (tw, _), _ = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.60, 1)
+        cv2.putText(img, hint, ((w - tw) // 2, 63),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.60, _C['t_white'], 1, cv2.LINE_AA)
+
+    elif state == STATE_LOGIN_WAITING:
+        hint = "PLEASE LOGIN VIA DASHBOARD"
+        (tw, _), _ = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.60, 1)
+        cv2.putText(img, hint, ((w - tw) // 2, 63),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.60, _C['t_white'], 1, cv2.LINE_AA)
+
+    elif state == STATE_FACE_VERIFICATION:
+        hint = "LOOK AT CAMERA TO VERIFY"
+        (tw, _), _ = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.60, 1)
+        cv2.putText(img, hint, ((w - tw) // 2, 63),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.60, _C['t_white'], 1, cv2.LINE_AA)
+
+    elif state == STATE_FACE_REGISTRATION:
+        hint = "LOOK AT CAMERA TO REGISTER"
         (tw, _), _ = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.60, 1)
         cv2.putText(img, hint, ((w - tw) // 2, 63),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.60, _C['t_white'], 1, cv2.LINE_AA)
@@ -1481,12 +1513,12 @@ def main():
     voice_thread.start()
     print("[OK] Voice listener started")
 
-    current_state = STATE_PASSIVE
+    current_state = STATE_LOGIN_WAITING
     last_interaction_time = time.time()
     prev_time = time.time()
     active_announced = False
 
-    print("[OK] System is PASSIVE — show hand or say 'Activate'")
+    print("[OK] System is locked. Please login via Dashboard to activate.")
     print("[OK] Voice commands require 'System' prefix (e.g. 'System open chrome')")
     print("-" * 60)
 
@@ -1535,7 +1567,88 @@ def main():
         detected_gesture = ''
         inactivity_remaining = INACTIVITY_TIMEOUT
 
-        if current_state == STATE_PASSIVE:
+        # Check global login state for active states
+        if current_state not in [STATE_LOGIN_WAITING, STATE_FACE_VERIFICATION, STATE_FACE_REGISTRATION]:
+            session_doc = db["settings"].find_one({"key": "session_state"})
+            if not session_doc or not session_doc.get("logged_in"):
+                current_state = STATE_LOGIN_WAITING
+                if system_state.get('cursor_active', False):
+                    cursor_controller.release()
+                    system_state['cursor_active'] = False
+                system_state['voice_activate'] = False
+                print("[STATE] Logged out → LOGIN_WAITING")
+
+        if current_state == STATE_LOGIN_WAITING:
+            system_state['voice_activate'] = False # Ignore voice
+            session_doc = db["settings"].find_one({"key": "session_state"})
+            if session_doc and session_doc.get("logged_in") and session_doc.get("username"):
+                username = session_doc.get("username")
+                # Check if face exists for this user
+                auth_face_doc = db["settings"].find_one({"key": "user_face", "username": username})
+                if not auth_face_doc:
+                    current_state = STATE_FACE_REGISTRATION
+                    print(f"[STATE] Logged in ({username}) → FACE REGISTRATION")
+                else:
+                    current_state = STATE_FACE_VERIFICATION
+                    print(f"[STATE] Logged in ({username}) → FACE VERIFICATION")
+                    
+        elif current_state == STATE_FACE_REGISTRATION:
+            system_state['voice_activate'] = False
+            session_doc = db["settings"].find_one({"key": "session_state"})
+            if not session_doc or not session_doc.get("logged_in"):
+                current_state = STATE_LOGIN_WAITING
+            else:
+                username = session_doc.get("username")
+                rgb_small = cv2.resize(imgRGB, (0, 0), fx=0.5, fy=0.5)
+                face_locations = face_recognition.face_locations(rgb_small)
+                if face_locations:
+                    face_encodings = face_recognition.face_encodings(rgb_small, face_locations)
+                    if face_encodings:
+                        current_face_encoding = face_encodings[0]
+                        db["settings"].insert_one({
+                            "key": "user_face",
+                            "username": username,
+                            "encoding": current_face_encoding.tolist()
+                        })
+                        current_state = STATE_PASSIVE
+                        speak(f"Face registered for {username}. System unlocked.")
+                        print(f"[STATE] Face Registered ({username}) → PASSIVE")
+                for (top, right, bottom, left) in face_locations:
+                    top *= 2; right *= 2; bottom *= 2; left *= 2
+                    cv2.rectangle(img, (left, top), (right, bottom), (255, 0, 165), 2)
+                    
+        elif current_state == STATE_FACE_VERIFICATION:
+            system_state['voice_activate'] = False # Ignore voice
+            session_doc = db["settings"].find_one({"key": "session_state"})
+            if not session_doc or not session_doc.get("logged_in"):
+                current_state = STATE_LOGIN_WAITING
+                print("[STATE] Logged out → LOGIN_WAITING")
+            else:
+                username = session_doc.get("username")
+                rgb_small = cv2.resize(imgRGB, (0, 0), fx=0.5, fy=0.5)
+                face_locations = face_recognition.face_locations(rgb_small)
+                if face_locations:
+                    face_encodings = face_recognition.face_encodings(rgb_small, face_locations)
+                    if face_encodings:
+                        current_face_encoding = face_encodings[0]
+                        auth_face_doc = db["settings"].find_one({"key": "user_face", "username": username})
+                        if auth_face_doc:
+                            import numpy as np
+                            known_encoding = np.array(auth_face_doc["encoding"])
+                            matches = face_recognition.compare_faces([known_encoding], current_face_encoding)
+                            if matches[0]:
+                                current_state = STATE_PASSIVE
+                                speak(f"Face verified for {username}. System unlocked.")
+                                print(f"[STATE] Face Verified ({username}) → PASSIVE")
+                            else:
+                                system_state['last_action'] = "Face not matched!"
+                                system_state['action_display_time'] = curr_time
+                                
+                for (top, right, bottom, left) in face_locations:
+                    top *= 2; right *= 2; bottom *= 2; left *= 2
+                    cv2.rectangle(img, (left, top), (right, bottom), (255, 165, 0), 2)
+
+        elif current_state == STATE_PASSIVE:
 
             # Release cursor if it was active
             if system_state.get('cursor_active', False):

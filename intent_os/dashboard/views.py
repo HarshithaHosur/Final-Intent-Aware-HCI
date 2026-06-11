@@ -8,6 +8,18 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from db import gestures_collection, voice_collection, settings_collection, logs_collection
 
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.signals import user_logged_in, user_logged_out
+from django.dispatch import receiver
+
+@receiver(user_logged_in)
+def set_logged_in(sender, user, request, **kwargs):
+    settings_collection.update_one({"key": "session_state"}, {"$set": {"logged_in": True, "username": user.username}}, upsert=True)
+
+@receiver(user_logged_out)
+def set_logged_out(sender, user, request, **kwargs):
+    settings_collection.update_one({"key": "session_state"}, {"$set": {"logged_in": False}}, upsert=True)
+
 # Initial Data for Database Seeding
 INITIAL_STATE = {
     'gestures': [
@@ -159,27 +171,53 @@ def init_db():
 
 init_db()
 
+from .forms import CustomSignupForm
+from django.contrib.auth import logout
+from django.shortcuts import redirect
+
+def signup(request):
+    if request.method == 'POST':
+        form = CustomSignupForm(request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect('login')
+    else:
+        form = CustomSignupForm()
+    return render(request, 'registration/signup.html', {'form': form})
+
+def custom_logout(request):
+    logout(request)
+    return redirect('login')
+
+@login_required
 def dashboard_home(request):
     return render(request, 'dashboard.html')
 
+@login_required
 def gesture_settings(request):
     return render(request, 'gesture_settings.html')
 
+@login_required
 def voice_settings(request):
     return render(request, 'voice_settings.html')
 
+@login_required
 def live_nodes(request):
     return render(request, 'live_nodes.html')
 
+@login_required
 def vault(request):
     return render(request, 'vault.html')
 
+@login_required
 def cursor_control(request):
     return render(request, 'cursor_control.html')
 
+@login_required
 def system_controls(request):
     return render(request, 'system_controls.html')
 
+@login_required
 def help_guide(request):
     return render(request, 'help_guide.html')
 

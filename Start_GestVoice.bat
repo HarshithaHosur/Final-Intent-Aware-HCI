@@ -9,8 +9,8 @@ echo.
 echo Please wait while the AI components load. This may take a few seconds...
 echo.
 
-REM 1. Navigate to correct directory explicitly
-cd /d "d:\ishita"
+REM 1. Start MongoDB Backend
+python setup_mongo.py
 
 REM 2. Run unified launcher (starts Django + AI + opens dashboard)
 python launcher.py

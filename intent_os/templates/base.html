@@ -41,9 +41,10 @@
             <div class="user-profile">
                 <div class="avatar">O1</div>
                 <div class="info">
-                    <div class="name">Operator_01</div>
+                    <div class="name">{{ user.username|default:"Operator_01" }}</div>
                     <div class="level">LEVEL 5 ACCESS</div>
                 </div>
+                <a href="{% url 'custom_logout' %}" title="Logout" style="margin-left: auto; color: #ff6b6b; text-decoration: none; font-size: 18px; padding: 5px;">⏻</a>
             </div>
         </aside>
 

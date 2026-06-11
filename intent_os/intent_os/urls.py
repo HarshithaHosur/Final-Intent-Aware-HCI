@@ -1,9 +1,12 @@
 from django.contrib import admin
-from django.urls import path
+from django.urls import path, include
 from dashboard import views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('accounts/', include('django.contrib.auth.urls')),
+    path('signup/', views.signup, name='signup'),
+    path('logout/', views.custom_logout, name='custom_logout'),
     path('', views.dashboard_home, name='dashboard_home'),
     path('gesture-settings/', views.gesture_settings, name='gesture_settings'),
     path('voice-settings/', views.voice_settings, name='voice_settings'),
