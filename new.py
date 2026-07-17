@@ -24,6 +24,7 @@ import io
 import webbrowser
 from PIL import Image
 from cursor_control import CursorController
+from hand_ownership_verifier import HandOwnershipVerifier, HandOwnershipConfig
 
 # Force UTF-8 encoding for Windows console to handle emojis
 if sys.platform == 'win32':
@@ -73,6 +74,7 @@ GESTURE_COOLDOWN = 0.5
 SWIPE_COOLDOWN = 1.5          # Seconds to block after a swipe so only 1 tab switches
 SWIPE_FRAME_WINDOW = 8
 
+# Camera dimensions are configured, but let's make sure they align with verifier if needed
 CAMERA_WIDTH = 1280
 CAMERA_HEIGHT = 720
 CAMERA_FPS = 30
@@ -93,18 +95,21 @@ STATE_DICTATION = "DICTATION"
 STATE_LOGIN_WAITING = "LOGIN_WAITING"
 STATE_FACE_VERIFICATION = "FACE_VERIFICATION"
 STATE_FACE_REGISTRATION = "FACE_REGISTRATION"
+STATE_SIGNUP_REGISTRATION = "SIGNUP_REGISTRATION"
 
 # ============================================================
 #                 MEDIAPIPE SETUP
 # ============================================================
 
-mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(
+mp_holistic = mp.solutions.holistic
+holistic = mp_holistic.Holistic(
     static_image_mode=False,
-    max_num_hands=2,
+    model_complexity=1,
     min_detection_confidence=0.7,
-    min_tracking_confidence=0.6
+    min_tracking_confidence=0.6,
+    smooth_landmarks=True
 )
+mp_hands = mp.solutions.hands  # kept for references to hands and connections
 mp_draw = mp.solutions.drawing_utils
 
 LANDMARK_STYLE = mp_draw.DrawingSpec(color=(180, 0, 200), thickness=2, circle_radius=5)
@@ -681,7 +686,9 @@ def extract_system_command(text):
 # ============================================================
 
 def is_index_pointing(landmarks, handedness='Right'):
-    """Check if only index finger is extended (pointing gesture for cursor)."""
+    """Check if only index finger is extended (pointing gesture for cursor).
+    Thumbs-up conflict is prevented by detect_static_gesture priority order
+    (thumbs_up is checked before index_cursor) and the 2-second hold requirement."""
     tips = [4, 8, 12, 16, 20]
     pips = [2, 5, 9, 13, 17]
     index_up = landmarks[tips[1]].y < landmarks[pips[1]].y
@@ -1471,7 +1478,7 @@ def _rect_alpha(img, pt1, pt2, color, alpha):
 
 def draw_ui(img, state, fps, progress=0, context="", last_action="",
             action_display_time=0, inactivity_remaining=0, detected_gesture="", scroll_mode=False,
-            gesture_hold_progress=0, gesture_hold_name="", cursor_active=False):
+            gesture_hold_progress=0, gesture_hold_name="", cursor_active=False, verification_status=None):
     h, w = img.shape[:2]
 
     if state == STATE_ACTIVE:
@@ -1489,6 +1496,9 @@ def draw_ui(img, state, fps, progress=0, context="", last_action="",
     elif state == STATE_FACE_REGISTRATION:
         hdr_col = (100, 20, 80); acc_col = (255, 0, 165)
         lbl_col = (255, 0, 200); lbl_txt = "REGISTERING FACE"
+    elif state == STATE_SIGNUP_REGISTRATION:
+        hdr_col = (100, 20, 80); acc_col = (255, 0, 165)
+        lbl_col = (255, 0, 200); lbl_txt = "ENROLLING SIGNUP FACE"
     else:
         hdr_col = _C['hdr_passive']; acc_col = _C['acc_passive']
         lbl_col = _C['t_passive'];   lbl_txt = "SYSTEM PASSIVE"
@@ -1522,6 +1532,12 @@ def draw_ui(img, state, fps, progress=0, context="", last_action="",
 
     elif state == STATE_FACE_REGISTRATION:
         hint = "LOOK AT CAMERA TO REGISTER"
+        (tw, _), _ = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)
+        cv2.putText(img, hint, ((w - tw) // 2, 63),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, _C['t_white'], 2, cv2.LINE_AA)
+
+    elif state == STATE_SIGNUP_REGISTRATION:
+        hint = "LOOK AT CAMERA TO ENROLL"
         (tw, _), _ = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)
         cv2.putText(img, hint, ((w - tw) // 2, 63),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.65, _C['t_white'], 2, cv2.LINE_AA)
@@ -1604,6 +1620,62 @@ def draw_ui(img, state, fps, progress=0, context="", last_action="",
             cv2.putText(img, last_action, (ax, ay),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.65, _C['t_cyan'], 2, cv2.LINE_AA)
 
+    # ── SECURITY VERIFICATION OVERLAY CARD ──
+    if verification_status is not None:
+        card_w = 320
+        card_h = 160
+        x1 = w - card_w - 20
+        y1 = HEADER_H + 20
+        x2 = w - 20
+        y2 = y1 + card_h
+
+        # Draw semi-transparent card background
+        _rect_alpha(img, (x1, y1), (x2, y2), (20, 20, 20), 0.75)
+        cv2.rectangle(img, (x1, y1), (x2, y2), (80, 80, 80), 1)
+
+        # Title
+        cv2.putText(img, "SECURITY VERIFICATION", (x1 + 12, y1 + 22),
+                    cv2.FONT_HERSHEY_DUPLEX, 0.50, (200, 200, 200), 1, cv2.LINE_AA)
+        cv2.line(img, (x1 + 10, y1 + 30), (x2 - 10, y1 + 30), (60, 60, 60), 1)
+
+        # Status indicators
+        indicators = [
+            ("Face Verified", verification_status.face_authenticated),
+            ("Single Person Detected", verification_status.single_person),
+            ("Wrist Match Valid", verification_status.left_wrist_match and verification_status.right_wrist_match),
+            ("Motion Continuity Valid", verification_status.left_motion_valid and verification_status.right_motion_valid),
+            ("Gesture Ready", verification_status.gesture_ready)
+        ]
+
+        curr_y = y1 + 52
+        for label, status in indicators:
+            color = (50, 220, 50) if status else (50, 50, 220)
+
+            # Draw status indicator box
+            cv2.rectangle(img, (x1 + 15, curr_y - 12), (x1 + 27, curr_y), color, -1)
+            
+            # Vector-draw checkmark or cross inside status box
+            if status:
+                # Checkmark lines
+                cv2.line(img, (x1 + 17, curr_y - 6), (x1 + 20, curr_y - 3), (255, 255, 255), 1, cv2.LINE_AA)
+                cv2.line(img, (x1 + 20, curr_y - 3), (x1 + 25, curr_y - 9), (255, 255, 255), 1, cv2.LINE_AA)
+            else:
+                # Cross lines
+                cv2.line(img, (x1 + 18, curr_y - 9), (x1 + 24, curr_y - 3), (255, 255, 255), 1, cv2.LINE_AA)
+                cv2.line(img, (x1 + 24, curr_y - 9), (x1 + 18, curr_y - 3), (255, 255, 255), 1, cv2.LINE_AA)
+
+            cv2.putText(img, label, (x1 + 37, curr_y - 1),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 220, 220), 1, cv2.LINE_AA)
+            curr_y += 22
+
+        # Draw rejection reason if not ready
+        if not verification_status.gesture_ready and verification_status.rejection_reason:
+            reason_text = f"Rejection: {verification_status.rejection_reason}"
+            if len(reason_text) > 42:
+                reason_text = reason_text[:39] + "..."
+            cv2.putText(img, reason_text, (x1 + 10, y2 - 8),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, (80, 80, 240), 1, cv2.LINE_AA)
+
     cv2.putText(img, f"{int(fps)} fps", (8, h - 7),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, _C['t_grey'], 2, cv2.LINE_AA)
     quit_lbl = "Q  \u2014  quit"
@@ -1677,6 +1749,10 @@ def main():
     gesture_recognizer = GestureRecognizer()
     cursor_controller = CursorController()
 
+    # Initialize Hand Ownership Verifier
+    ownership_config = HandOwnershipConfig()
+    hand_verifier = HandOwnershipVerifier(ownership_config)
+
     # Get screen size for window positioning
     screen_w, screen_h = pyautogui.size()
     SMALL_WIN_W, SMALL_WIN_H = 480, 270
@@ -1718,6 +1794,7 @@ def main():
     last_interaction_time = time.time()
     prev_time = time.time()
     active_announced = False
+    last_session_check_time = 0  # Throttle MongoDB session queries to once per second
 
     print("[OK] System is locked. Please login via Dashboard to activate.")
     print("[OK] Voice commands require 'System' prefix (e.g. 'System open chrome')")
@@ -1730,6 +1807,18 @@ def main():
         # If waiting for login, bypass camera reading, hand tracking, and UI display
         if current_state == STATE_LOGIN_WAITING:
             time.sleep(0.2)
+            
+            # Check for signup face registration request
+            signup_doc = db["settings"].find_one({"key": "signup_state"})
+            if signup_doc and signup_doc.get("status") == "capturing" and signup_doc.get("username"):
+                temp_username = signup_doc.get("username")
+                current_state = STATE_SIGNUP_REGISTRATION
+                system_state['signup_username'] = temp_username
+                system_state['signup_start_time'] = time.time()
+                print(f"[STATE] Signup face capture initiated for {temp_username} → SIGNUP_REGISTRATION")
+                cv2.waitKey(1)
+                continue
+
             if window_positioned:
                 cv2.destroyAllWindows()
                 window_positioned = False
@@ -1765,8 +1854,8 @@ def main():
         img = cv2.flip(img, 1)
         imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         
-        # Only process gestures/hands if not in FACE_REGISTRATION or FACE_VERIFICATION state
-        process_gestures = current_state not in [STATE_LOGIN_WAITING, STATE_FACE_REGISTRATION, STATE_FACE_VERIFICATION]
+        # Only process gestures/hands if not in FACE_REGISTRATION, FACE_VERIFICATION, or SIGNUP_REGISTRATION state
+        process_gestures = current_state not in [STATE_LOGIN_WAITING, STATE_FACE_REGISTRATION, STATE_FACE_VERIFICATION, STATE_SIGNUP_REGISTRATION]
 
         curr_time = time.time()
         fps = 1 / (curr_time - prev_time + 1e-9)
@@ -1783,46 +1872,57 @@ def main():
         spatial_elapsed = 0
         current_candidate = None
         stable_gesture_triggered = None
+        verification = None
 
         if process_gestures:
             imgRGB.flags.writeable = False
-            results = hands.process(imgRGB)
+            results = holistic.process(imgRGB)
             imgRGB.flags.writeable = True
 
-            if results and results.multi_hand_landmarks and results.multi_handedness:
-                hand_detected = True
-                for lm in results.multi_hand_landmarks:
-                    mp_draw.draw_landmarks(
-                        img, lm,
-                        mp_hands.HAND_CONNECTIONS,
-                        LANDMARK_STYLE, CONNECTION_STYLE
-                    )
-                
-                if len(results.multi_hand_landmarks) >= 2:
-                    sorted_hands = sorted(
-                        zip(results.multi_hand_landmarks, results.multi_handedness),
-                        key=lambda h: h[0].landmark[0].x
-                    )
-                    left_hand_landmarks = sorted_hands[0][0].landmark
-                    left_handedness = sorted_hands[0][1].classification[0].label
-                    right_hand_landmarks = sorted_hands[1][0].landmark
-                    right_handedness = sorted_hands[1][1].classification[0].label
-                else:
-                    single_hand_landmarks = results.multi_hand_landmarks[0].landmark
-                    single_label = results.multi_handedness[0].classification[0].label
-                    if single_label == 'Left':
-                        left_hand_landmarks = single_hand_landmarks
-                        left_handedness = 'Left'
-                    else:
-                        right_hand_landmarks = single_hand_landmarks
-                        right_handedness = 'Right'
+            # Extract hand landmarks from Holistic output
+            if results.left_hand_landmarks:
+                left_hand_landmarks = results.left_hand_landmarks.landmark
+                mp_draw.draw_landmarks(
+                    img, results.left_hand_landmarks,
+                    mp_hands.HAND_CONNECTIONS,
+                    LANDMARK_STYLE, CONNECTION_STYLE
+                )
+            if results.right_hand_landmarks:
+                right_hand_landmarks = results.right_hand_landmarks.landmark
+                mp_draw.draw_landmarks(
+                    img, results.right_hand_landmarks,
+                    mp_hands.HAND_CONNECTIONS,
+                    LANDMARK_STYLE, CONNECTION_STYLE
+                )
 
+            # Check face verified status
+            face_verified = (current_state in [STATE_PASSIVE, STATE_ACTIVATING, STATE_ACTIVE, STATE_DICTATION])
+            
+            # Run verification layers
+            verification = hand_verifier.verify(imgRGB, results, face_verified)
+
+            # Apply verification filters to hands
+            if face_verified and verification:
+                if not verification.single_person:
+                    # Multi-person gate triggered: suppress all hands
+                    left_hand_landmarks = None
+                    right_hand_landmarks = None
+                else:
+                    # Filter based on anatomical & temporal checks
+                    if not verification.left_hand_valid:
+                        left_hand_landmarks = None
+                    if not verification.right_hand_valid:
+                        right_hand_landmarks = None
+
+            hand_detected = (left_hand_landmarks is not None or right_hand_landmarks is not None)
+
+            if hand_detected:
                 if right_hand_landmarks is not None:
                     hand_landmarks = right_hand_landmarks
-                    handedness = right_handedness
+                    handedness = 'Right'
                 else:
                     hand_landmarks = left_hand_landmarks
-                    handedness = left_handedness
+                    handedness = 'Left'
 
             # Determine spatial stability of the primary hand
             if hand_detected:
@@ -1838,11 +1938,21 @@ def main():
             
             if hand_detected:
                 if system_state.get('scroll_mode', False):
-                    if left_hand_landmarks is not None and right_hand_landmarks is not None:
-                        left_gesture = gesture_recognizer.detect_static_gesture(left_hand_landmarks, 'Left')
-                        right_gesture = gesture_recognizer.detect_static_gesture(right_hand_landmarks, 'Right')
-                        if left_gesture == 'peace' and right_gesture == 'peace':
-                            current_candidate = 'double_peace'
+                    # Check if either hand is showing peace to stop scroll mode immediately
+                    left_gesture = gesture_recognizer.detect_static_gesture(left_hand_landmarks, 'Left') if left_hand_landmarks is not None else None
+                    right_gesture = gesture_recognizer.detect_static_gesture(right_hand_landmarks, 'Right') if right_hand_landmarks is not None else None
+                    if left_gesture == 'peace' or right_gesture == 'peace':
+                        system_state['scroll_mode'] = False
+                        system_state['scroll_speed'] = 0
+                        system_state['last_action'] = "✌️ Peace -> Scroll Mode OFF"
+                        system_state['action_display_time'] = curr_time
+                        speak("Scroll mode disabled")
+                        log_event(event_type="system", command="Scroll Mode OFF", action="Peace Sign Detected", status="completed")
+                        system_state['prev_avg_y'] = None
+                        system_state['gesture_candidate'] = None
+                        system_state['candidate_start_time'] = None
+                        system_state['gesture_lock_until'] = curr_time + 1.0
+                    current_candidate = None
                 else:
                     if left_hand_landmarks is not None and right_hand_landmarks is not None:
                         left_gesture = gesture_recognizer.detect_static_gesture(left_hand_landmarks, 'Left')
@@ -1862,12 +1972,17 @@ def main():
                         elif left_hand_landmarks is not None:
                             current_candidate = gesture_recognizer.detect_static_gesture(left_hand_landmarks, 'Left')
 
-            # Bypass spatial stability check for 'index_cursor' to make cursor activation fast and responsive
-            if current_candidate is not None and (is_stable or current_candidate == 'index_cursor'):
+            # Bypass spatial stability check for 'index_cursor' and 'double_palm' to make activation fast/reliable
+            if current_candidate is not None and (is_stable or current_candidate in ['index_cursor', 'double_palm']):
                 if system_state.get('gesture_candidate') == current_candidate:
                     elapsed = curr_time - system_state.get('candidate_start_time', curr_time)
-                    # Removed 3-sec timer as requested: trigger immediately when stable
-                    required_time = 0.0 
+                    # Require 2.0s hold for index_cursor, 3.0s for double_palm, instant for others
+                    if current_candidate == 'double_palm':
+                        required_time = 3.0
+                    elif current_candidate == 'index_cursor':
+                        required_time = 1.5
+                    else:
+                        required_time = 0.0
                     if elapsed >= required_time:
                         if not in_cooldown:
                             stable_gesture_triggered = current_candidate
@@ -1880,21 +1995,42 @@ def main():
                 system_state['gesture_candidate'] = None
                 system_state['candidate_start_time'] = None
 
+            # Enforce Layer 1/2/3 verification gating (with 5-frame grace period)
+            if verification and not verification.gesture_ready:
+                # Increment rejection counter for grace period
+                system_state['verify_reject_count'] = system_state.get('verify_reject_count', 0) + 1
+                if system_state.get('verify_reject_count', 0) >= 5:
+                    # Only suppress after 5 consecutive rejected frames
+                    stable_gesture_triggered = None
+                    current_candidate = None
+                    system_state['gesture_candidate'] = None
+                    system_state['candidate_start_time'] = None
+                    hand_detected = False
+                    cursor_controller.release()
+                    if system_state.get('scroll_speed', 0) != 0:
+                        system_state['scroll_speed'] = 0
+                    system_state['prev_avg_y'] = None
+            elif verification:
+                # Reset rejection counter on successful verification
+                system_state['verify_reject_count'] = 0
+
         progress = 0
         context = ''
         detected_gesture = ''
         inactivity_remaining = INACTIVITY_TIMEOUT
 
-        # Check global login state for active states
-        if current_state not in [STATE_LOGIN_WAITING, STATE_FACE_VERIFICATION, STATE_FACE_REGISTRATION]:
-            session_doc = db["settings"].find_one({"key": "session_state"})
-            if not session_doc or not session_doc.get("logged_in"):
-                current_state = STATE_LOGIN_WAITING
-                if system_state.get('cursor_active', False):
-                    cursor_controller.release()
-                    system_state['cursor_active'] = False
-                system_state['voice_activate'] = False
-                print("[STATE] Logged out → LOGIN_WAITING")
+        # Check global login state for active states (throttled to once per second)
+        if current_state not in [STATE_LOGIN_WAITING, STATE_FACE_VERIFICATION, STATE_FACE_REGISTRATION, STATE_SIGNUP_REGISTRATION]:
+            if curr_time - last_session_check_time >= 1.0:
+                last_session_check_time = curr_time
+                session_doc = db["settings"].find_one({"key": "session_state"})
+                if not session_doc or not session_doc.get("logged_in"):
+                    current_state = STATE_LOGIN_WAITING
+                    if system_state.get('cursor_active', False):
+                        cursor_controller.release()
+                        system_state['cursor_active'] = False
+                    system_state['voice_activate'] = False
+                    print("[STATE] Logged out → LOGIN_WAITING")
 
         if current_state == STATE_LOGIN_WAITING:
             system_state['voice_activate'] = False # Ignore voice
@@ -1916,6 +2052,46 @@ def main():
                         system_state['verification_start_time'] = time.time()
                         print(f"[STATE] Logged in ({username}) → FACE VERIFICATION")
                     
+        elif current_state == STATE_SIGNUP_REGISTRATION:
+            if not FACE_RECOGNITION_AVAILABLE:
+                db["settings"].update_one({"key": "signup_state"}, {"$set": {"status": "failed", "error": "Face recognition not available"}})
+                current_state = STATE_LOGIN_WAITING
+            else:
+                system_state['voice_activate'] = False
+                temp_username = system_state.get('signup_username')
+                start_time = system_state.get('signup_start_time')
+                
+                # Check for cancellation or 30s timeout
+                signup_doc = db["settings"].find_one({"key": "signup_state"})
+                if not signup_doc or signup_doc.get("status") == "cancelled" or (start_time and (time.time() - start_time > 30.0)):
+                    db["settings"].update_one({"key": "signup_state"}, {"$set": {"status": "failed", "error": "timeout or cancelled"}})
+                    current_state = STATE_LOGIN_WAITING
+                    print(f"[STATE] Signup face capture timed out/cancelled for {temp_username} → LOGIN_WAITING")
+                else:
+                    rgb_small = cv2.resize(imgRGB, (0, 0), fx=0.25, fy=0.25)
+                    face_locations = face_recognition.face_locations(rgb_small)
+                    if face_locations:
+                        face_encodings = face_recognition.face_encodings(rgb_small, face_locations)
+                        if face_encodings:
+                            current_face_encoding = face_encodings[0]
+                            # Store temporary encoding
+                            db["settings"].update_one(
+                                {"key": "temp_signup_face", "username": temp_username},
+                                {"$set": {"encoding": current_face_encoding.tolist()}},
+                                upsert=True
+                            )
+                            # Update status in DB
+                            db["settings"].update_one(
+                                {"key": "signup_state"},
+                                {"$set": {"status": "captured"}}
+                            )
+                            speak("Face scanned successfully.")
+                            print(f"[STATE] Signup Face Captured ({temp_username}) → LOGIN_WAITING")
+                            current_state = STATE_LOGIN_WAITING
+                    for (top, right, bottom, left) in face_locations:
+                        top *= 4; right *= 4; bottom *= 4; left *= 4
+                        cv2.rectangle(img, (left, top), (right, bottom), (255, 0, 165), 2)
+                    
         elif current_state == STATE_FACE_REGISTRATION:
             if not FACE_RECOGNITION_AVAILABLE:
                 current_state = STATE_PASSIVE
@@ -1926,7 +2102,7 @@ def main():
                     current_state = STATE_LOGIN_WAITING
                 else:
                     username = session_doc.get("username")
-                    rgb_small = cv2.resize(imgRGB, (0, 0), fx=0.5, fy=0.5)
+                    rgb_small = cv2.resize(imgRGB, (0, 0), fx=0.25, fy=0.25)
                     face_locations = face_recognition.face_locations(rgb_small)
                     if face_locations:
                         face_encodings = face_recognition.face_encodings(rgb_small, face_locations)
@@ -1946,7 +2122,7 @@ def main():
                             speak(f"Face registered for {username}. System unlocked.")
                             print(f"[STATE] Face Registered ({username}) → PASSIVE")
                     for (top, right, bottom, left) in face_locations:
-                        top *= 2; right *= 2; bottom *= 2; left *= 2
+                        top *= 4; right *= 4; bottom *= 4; left *= 4
                         cv2.rectangle(img, (left, top), (right, bottom), (255, 0, 165), 2)
                     
         elif current_state == STATE_FACE_VERIFICATION:
@@ -1961,9 +2137,9 @@ def main():
                 else:
                     username = session_doc.get("username")
                     
-                    # 3-second timeout check (fast response)
+                    # 8-second timeout check (forgiving window)
                     start_time = system_state.get('verification_start_time')
-                    if start_time and (curr_time - start_time > 3.0):
+                    if start_time and (curr_time - start_time > 8.0):
                         db["settings"].update_one(
                             {"key": "session_state"},
                             {"$set": {"verification_failed": True, "logged_in": False}}
@@ -1972,7 +2148,7 @@ def main():
                         print(f"[STATE] Face Verification Timeout ({username}) → LOGIN_WAITING")
                         current_state = STATE_LOGIN_WAITING
                     else:
-                        rgb_small = cv2.resize(imgRGB, (0, 0), fx=0.5, fy=0.5)
+                        rgb_small = cv2.resize(imgRGB, (0, 0), fx=0.25, fy=0.25)
                         face_locations = face_recognition.face_locations(rgb_small)
                         if face_locations:
                             face_encodings = face_recognition.face_encodings(rgb_small, face_locations)
@@ -1982,8 +2158,9 @@ def main():
                                 if auth_face_doc:
                                     import numpy as np
                                     known_encoding = np.array(auth_face_doc["encoding"])
-                                    matches = face_recognition.compare_faces([known_encoding], current_face_encoding)
+                                    matches = face_recognition.compare_faces([known_encoding], current_face_encoding, tolerance=0.5)
                                     if matches[0]:
+                                        system_state['face_mismatch_count'] = 0
                                         db["settings"].update_one(
                                             {"key": "session_state"},
                                             {"$set": {"face_verified": True}}
@@ -1992,11 +2169,20 @@ def main():
                                         speak(f"Face verified for {username}. System unlocked.")
                                         print(f"[STATE] Face Verified ({username}) → PASSIVE")
                                     else:
+                                        system_state['face_mismatch_count'] = system_state.get('face_mismatch_count', 0) + 1
                                         system_state['last_action'] = "Face not matched!"
                                         system_state['action_display_time'] = curr_time
-                                        
+                                        if system_state['face_mismatch_count'] >= 10:
+                                            db["settings"].update_one(
+                                                {"key": "session_state"},
+                                                {"$set": {"verification_failed": True, "logged_in": False}}
+                                            )
+                                            speak("Face mismatch detected. Access denied.")
+                                            print(f"[STATE] Face Mismatch Lockout ({username}) → LOGIN_WAITING")
+                                            current_state = STATE_LOGIN_WAITING
+                                            system_state['face_mismatch_count'] = 0
                         for (top, right, bottom, left) in face_locations:
-                            top *= 2; right *= 2; bottom *= 2; left *= 2
+                            top *= 4; right *= 4; bottom *= 4; left *= 4
                             cv2.rectangle(img, (left, top), (right, bottom), (255, 165, 0), 2)
 
         elif current_state == STATE_PASSIVE:
@@ -2111,31 +2297,27 @@ def main():
 
             if hand_detected:
                 if system_state.get('scroll_mode', False):
-                    if stable_gesture_triggered == 'double_peace':
-                        execute_stable_gesture('double_peace', system_state, context, gesture_recognizer)
-                        system_state['gesture_lock_until'] = curr_time + 1.0
-                        if system_state.get('cursor_active', False):
-                            cursor_controller.release()
-                            system_state['cursor_active'] = False
-                        system_state['prev_avg_y'] = None
+                    # In scroll mode, only scroll if both hands show open palms (palm gesture)
+                    left_gesture = gesture_recognizer.detect_static_gesture(left_hand_landmarks, 'Left') if left_hand_landmarks is not None else None
+                    right_gesture = gesture_recognizer.detect_static_gesture(right_hand_landmarks, 'Right') if right_hand_landmarks is not None else None
+                    
+                    if left_hand_landmarks is not None and right_hand_landmarks is not None and left_gesture == 'palm' and right_gesture == 'palm':
+                        avg_y = (left_hand_landmarks[0].y + right_hand_landmarks[0].y) / 2.0
+                        if system_state.get('prev_avg_y') is not None:
+                            dy = avg_y - system_state['prev_avg_y']
+                            if abs(dy) > 0.008:
+                                scroll_amount = int(-dy * 2500)
+                                pyautogui.scroll(scroll_amount)
+                                last_interaction_time = curr_time
+                                system_state['last_interaction'] = curr_time
+                                if scroll_amount > 0:
+                                    system_state['last_action'] = "↕️ Scrolling Up"
+                                else:
+                                    system_state['last_action'] = "↕️ Scrolling Down"
+                                system_state['action_display_time'] = curr_time
+                        system_state['prev_avg_y'] = avg_y
                     else:
-                        if left_hand_landmarks is not None and right_hand_landmarks is not None:
-                            avg_y = (left_hand_landmarks[0].y + right_hand_landmarks[0].y) / 2.0
-                            if system_state.get('prev_avg_y') is not None:
-                                dy = avg_y - system_state['prev_avg_y']
-                                if abs(dy) > 0.008:
-                                    scroll_amount = int(-dy * 2500)
-                                    pyautogui.scroll(scroll_amount)
-                                    last_interaction_time = curr_time
-                                    system_state['last_interaction'] = curr_time
-                                    if scroll_amount > 0:
-                                        system_state['last_action'] = "↕️ Scrolling Up"
-                                    else:
-                                        system_state['last_action'] = "↕️ Scrolling Down"
-                                    system_state['action_display_time'] = curr_time
-                            system_state['prev_avg_y'] = avg_y
-                        else:
-                            system_state['prev_avg_y'] = None
+                        system_state['prev_avg_y'] = None
                 else:
                     system_state['prev_avg_y'] = None
                     if stable_gesture_triggered is not None:
@@ -2284,14 +2466,23 @@ def main():
         g_hold_name = ""
         if system_state.get('gesture_candidate') is not None and system_state.get('candidate_start_time') is not None:
             g_elapsed = curr_time - system_state['candidate_start_time']
-            required_time = 0.0
-            g_hold_progress = 1.0 if g_elapsed >= required_time else 0.0
-            g_hold_name = system_state['gesture_candidate']
+            cand = system_state['gesture_candidate']
+            if cand == 'double_palm':
+                required_time = 3.0
+            elif cand == 'index_cursor':
+                required_time = 1.5
+            else:
+                required_time = 0.0
+            if required_time > 0.0:
+                g_hold_progress = min(g_elapsed / required_time, 1.0)
+            else:
+                g_hold_progress = 1.0 if g_elapsed >= required_time else 0.0
+            g_hold_name = cand
 
         show_window = current_state not in [STATE_LOGIN_WAITING]
         
         if show_window:
-            if current_state in [STATE_FACE_REGISTRATION, STATE_FACE_VERIFICATION]:
+            if current_state in [STATE_FACE_REGISTRATION, STATE_FACE_VERIFICATION, STATE_SIGNUP_REGISTRATION]:
                 # Draw a simple overlay for Face Auth
                 cv2.putText(img, "FACE AUTHENTICATION", (20, 40), cv2.FONT_HERSHEY_DUPLEX, 1.0, (255, 200, 0), 2)
                 cv2.putText(img, "Looking for face...", (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
@@ -2309,7 +2500,8 @@ def main():
                     scroll_mode=system_state.get('scroll_mode', False),
                     gesture_hold_progress=g_hold_progress,
                     gesture_hold_name=g_hold_name,
-                    cursor_active=system_state.get('cursor_active', False)
+                    cursor_active=system_state.get('cursor_active', False),
+                    verification_status=verification
                 )
 
             # Resize frame for small window display

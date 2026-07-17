@@ -44,19 +44,19 @@ CAM_H = 480
 # unreliable. Instead we map a central region of the camera to
 # the full screen. This makes it easier to reach all corners.
 # Values are fractions of the camera frame (0.0 – 1.0).
-MAP_X_MIN = 0.20   # left 20% ignored
-MAP_X_MAX = 0.80   # right 20% ignored
-MAP_Y_MIN = 0.20   # top 20% ignored
-MAP_Y_MAX = 0.80   # bottom 20% ignored
+MAP_X_MIN = 0.28   # left 28% ignored
+MAP_X_MAX = 0.72   # right 28% ignored
+MAP_Y_MIN = 0.28   # top 28% ignored
+MAP_Y_MAX = 0.72   # bottom 28% ignored
 
 # ── Smoothing ──
 # Exponential smoothing factor (0.0 = max smooth, 1.0 = no smooth)
 # Lower = smoother but more latency; higher = faster but jitterier
-SMOOTHING_FACTOR = 0.70
+SMOOTHING_FACTOR = 0.55
 
 # ── Dead Zone ──
 # Ignore cursor movements smaller than this many pixels on screen
-DEAD_ZONE_PX = 2
+DEAD_ZONE_PX = 4
 
 # ── Click / Pinch Detection ──
 # Distance threshold (in normalised landmark units) for pinch
@@ -68,15 +68,15 @@ RIGHT_PINCH_THRESHOLD = 0.055
 
 # ── Gesture Stability ──
 # Every cursor action (click, drag) must be held for this many seconds
-PINCH_STABILITY_TIME = 2.0
+PINCH_STABILITY_TIME = 0.8
 
 # ── Click Cooldown ──
 # Minimum time (seconds) after an action before the next can trigger
-CLICK_COOLDOWN = 1.0
-
 # ── Drag Detection ──
 # How many consecutive "pinch held" frames before we enter drag mode
 DRAG_ENTRY_FRAMES = 4
+
+CLICK_COOLDOWN = 0.4
 
 
 
@@ -257,7 +257,8 @@ class CursorController:
         info['cursor_pos'] = (smooth_x, smooth_y)
 
         # Move the OS cursor
-        pyautogui.moveTo(smooth_x, smooth_y, _pause=False)
+        import ctypes
+        ctypes.windll.user32.SetCursorPos(smooth_x, smooth_y)
 
         now = time.time()
 
@@ -317,16 +318,20 @@ class CursorController:
             # ════════════════════════════════════════════════
             #  NON-BROWSER MODE: Immediate Actions (Instant Click & Drag)
             # ════════════════════════════════════════════════
-            self.left_pinch_start = None
             self.left_pinch_fired = False
             self.right_pinch_start = None
             self.right_pinch_fired = False
 
-            # Handle immediate left click and drag
+            # Handle immediate left click and drag (time-based check)
             if left_dist < PINCH_THRESHOLD:
-                self.pinch_hold_frames += 1
                 if not self.left_pinching:
                     self.left_pinching = True
+                    self.left_pinch_start = now
+                elif not self.drag_active:
+                    elapsed = now - (self.left_pinch_start or now)
+                    if elapsed >= 0.35:  # 0.35 seconds to enter drag mode
+                        self.drag_active = True
+                        pyautogui.mouseDown(button='left', _pause=False)
             else:
                 if self.left_pinching:
                     if self.drag_active:
@@ -339,12 +344,8 @@ class CursorController:
                             self.left_click_time = now
                             info['left_click'] = True
                     self.left_pinching = False
+                    self.left_pinch_start = None
                     self.pinch_hold_frames = 0
-
-            # If pinch is held long enough, trigger drag
-            if self.left_pinching and self.pinch_hold_frames >= DRAG_ENTRY_FRAMES and not self.drag_active:
-                self.drag_active = True
-                pyautogui.mouseDown(button='left', _pause=False)
 
             # Handle immediate right click
             if right_dist < RIGHT_PINCH_THRESHOLD:

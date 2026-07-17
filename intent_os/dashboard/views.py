@@ -198,15 +198,79 @@ from .forms import CustomSignupForm
 from django.contrib.auth import logout
 from django.shortcuts import redirect
 
+from django.views.decorators.csrf import csrf_exempt
+
 def signup(request):
     if request.method == 'POST':
         form = CustomSignupForm(request.POST)
+        username = request.POST.get('username')
+        
+        # Check if the temporary face exists in MongoDB
+        temp_face = settings_collection.find_one({"key": "temp_signup_face", "username": username})
+        
         if form.is_valid():
-            form.save()
-            return redirect('login')
+            if not temp_face:
+                form.add_error(None, "Biometric face registration is required. Please scan your face before registering.")
+            else:
+                user = form.save()
+                # Transfer encoding from temp to permanent
+                settings_collection.insert_one({
+                    "key": "user_face",
+                    "username": username,
+                    "encoding": temp_face["encoding"]
+                })
+                # Clean up temp face and signup state
+                settings_collection.delete_many({"key": "temp_signup_face", "username": username})
+                settings_collection.delete_many({"key": "signup_state"})
+                return redirect('login')
     else:
         form = CustomSignupForm()
+        # Clean up any leftover signup state on GET request to avoid stale states
+        settings_collection.delete_many({"key": "signup_state"})
     return render(request, 'registration/signup.html', {'form': form})
+
+
+@csrf_exempt
+def api_signup_face_capture(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            username = data.get('username')
+            if not username:
+                return JsonResponse({'status': 'error', 'message': 'Username is required'})
+            
+            # Start face capture by updating settings_collection
+            settings_collection.update_one(
+                {"key": "signup_state"},
+                {"$set": {"status": "capturing", "username": username}},
+                upsert=True
+            )
+            return JsonResponse({'status': 'success', 'message': 'Face enrollment initiated. Please look at the camera.'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)})
+    return JsonResponse({'status': 'error', 'message': 'POST request required'})
+
+
+def api_signup_face_status(request):
+    if request.method == 'GET':
+        username = request.GET.get('username')
+        if not username:
+            return JsonResponse({'status': 'error', 'message': 'Username is required'})
+            
+        signup_doc = settings_collection.find_one({"key": "signup_state"})
+        if signup_doc:
+            if signup_doc.get("username") == username:
+                status = signup_doc.get("status", "pending")
+                error = signup_doc.get("error", "")
+                return JsonResponse({'status': status, 'error': error})
+                
+        # If signup_state is gone, check if the face was successfully captured
+        temp_face = settings_collection.find_one({"key": "temp_signup_face", "username": username})
+        if temp_face:
+            return JsonResponse({'status': 'captured'})
+            
+        return JsonResponse({'status': 'pending'})
+    return JsonResponse({'status': 'error', 'message': 'GET request required'})
 
 def custom_logout(request):
     # Flush session completely so no stale auth persists

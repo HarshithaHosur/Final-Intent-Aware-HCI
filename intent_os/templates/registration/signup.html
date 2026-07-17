@@ -1,17 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>INTENT_OS Registration</title>
     {% load static %}
     <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=3.0">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
     <style>
         body {
             background-color: var(--bg-darker);
             background-image: radial-gradient(circle at 50% 50%, rgba(20, 153, 211, 0.1) 0%, transparent 50%),
-                              radial-gradient(circle at 100% 0%, rgba(135, 94, 255, 0.15) 0%, transparent 40%);
+                radial-gradient(circle at 100% 0%, rgba(135, 94, 255, 0.15) 0%, transparent 40%);
             display: flex;
             justify-content: center;
             align-items: center;
@@ -20,6 +23,7 @@
             font-family: 'Inter', sans-serif;
             color: var(--text-primary);
         }
+
         .login-container {
             background: rgba(22, 25, 33, 0.6);
             backdrop-filter: blur(16px);
@@ -29,12 +33,14 @@
             padding: 40px;
             width: 100%;
             max-width: 400px;
-            box-shadow: 0 24px 64px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+            box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
         }
+
         .login-header {
             text-align: center;
             margin-bottom: 30px;
         }
+
         .login-header h1 {
             font-family: 'JetBrains Mono', monospace;
             font-size: 24px;
@@ -44,14 +50,17 @@
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
+
         .login-header p {
             color: var(--text-secondary);
             font-size: 14px;
             margin: 0;
         }
+
         .form-group {
             margin-bottom: 20px;
         }
+
         .form-group label {
             display: block;
             font-size: 12px;
@@ -60,6 +69,7 @@
             text-transform: uppercase;
             letter-spacing: 1px;
         }
+
         .form-group input {
             width: 100%;
             background: rgba(0, 0, 0, 0.2);
@@ -72,14 +82,17 @@
             transition: all 0.3s ease;
             box-sizing: border-box;
         }
+
         .form-group input:focus {
             outline: none;
             border-color: var(--accent-cyan);
             box-shadow: 0 0 0 2px rgba(20, 153, 211, 0.2);
         }
+
         .form-group .helptext {
             display: none;
         }
+
         .btn-login {
             width: 100%;
             background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan));
@@ -93,12 +106,15 @@
             transition: opacity 0.3s, transform 0.2s;
             margin-top: 10px;
         }
+
         .btn-login:hover {
             opacity: 0.9;
         }
+
         .btn-login:active {
             transform: scale(0.98);
         }
+
         .error-message {
             background: rgba(255, 50, 50, 0.1);
             border: 1px solid rgba(255, 50, 50, 0.3);
@@ -109,20 +125,24 @@
             margin-bottom: 20px;
             text-align: left;
         }
+
         .signup-link {
             text-align: center;
             margin-top: 20px;
             font-size: 13px;
             color: var(--text-secondary);
         }
+
         .signup-link a {
             color: var(--accent-purple);
             text-decoration: none;
             font-weight: 600;
         }
+
         .signup-link a:hover {
             text-decoration: underline;
         }
+
         ul.errorlist {
             margin: 0;
             padding-left: 20px;
@@ -130,6 +150,7 @@
         }
     </style>
 </head>
+
 <body>
 
     <div class="login-container fade-in">
@@ -137,20 +158,20 @@
             <h1>NEW OPERATOR</h1>
             <p>Register to INTENT_OS</p>
         </div>
-        
+
         {% if form.errors %}
         <div class="error-message">
             {% for field in form %}
-                {% for error in field.errors %}
-                    {% if "already exists" in error %}
-                        <p style="margin:0;">Username already taken.</p>
-                    {% else %}
-                        <p style="margin:0;">{{ error }}</p>
-                    {% endif %}
-                {% endfor %}
+            {% for error in field.errors %}
+            {% if "already exists" in error %}
+            <p style="margin:0;">Username already taken.</p>
+            {% else %}
+            <p style="margin:0;">{{ error }}</p>
+            {% endif %}
+            {% endfor %}
             {% endfor %}
             {% for error in form.non_field_errors %}
-                <p style="margin:0;">{{ error }}</p>
+            <p style="margin:0;">{{ error }}</p>
             {% endfor %}
         </div>
         {% endif %}
@@ -158,10 +179,10 @@
         <form method="post">
             {% csrf_token %}
             {% for field in form %}
-                <div class="form-group">
-                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-                    {{ field }}
-                </div>
+            <div class="form-group">
+                <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+            </div>
             {% endfor %}
             <button type="submit" class="btn-login">REGISTER</button>
         </form>
@@ -172,4 +193,5 @@
     </div>
 
 </body>
+
 </html>

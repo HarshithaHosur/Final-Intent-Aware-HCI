@@ -30,4 +30,6 @@ urlpatterns = [
     path('api/recent-commands/', views.api_recent_commands, name='api_recent_commands'),
     path('api/system-status/', views.api_system_status, name='api_system_status'),
     path('api/users/', views.api_registered_users, name='api_registered_users'),
+    path('api/signup-face-capture/', views.api_signup_face_capture, name='api_signup_face_capture'),
+    path('api/signup-face-status/', views.api_signup_face_status, name='api_signup_face_status'),
 ]
