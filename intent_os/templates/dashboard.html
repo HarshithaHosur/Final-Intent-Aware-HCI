@@ -28,6 +28,7 @@
             <span class="dot-small"></span>
         </div>
         <div class="card-title">Voice Layer</div>
+
         <div class="card-value purple-text">Listening...</div>
     </div>
     <div class="top-card">
@@ -42,38 +43,6 @@
 <div class="dashboard-main-grid fade-in">
     <div class="grid-left">
         <div class="panel-section">
-            <div class="panel-header">
-                <div class="panel-title-group">
-                    <h2>Gesture Mapping</h2>
-                    <p>Configure spatial intent triggers</p>
-                </div>
-                <button class="btn-cyan-small">Add New</button>
-            </div>
-            <div class="gesture-list">
-                <div class="gesture-item">
-                    <div class="gesture-icon-box"><span class="icon">👆</span></div>
-                    <div class="gesture-info">
-                        <div class="g-name">Swipe Right</div>
-                        <div class="g-type">System Trigger</div>
-                    </div>
-                    <div class="gesture-arrow">→</div>
-                    <div class="gesture-action">Increase Volume</div>
-                    <button class="btn-trash">🗑</button>
-                </div>
-                <div class="gesture-item">
-                    <div class="gesture-icon-box pinch"><span class="icon">🤏</span></div>
-                    <div class="gesture-info">
-                        <div class="g-name">Two Finger Pinch</div>
-                        <div class="g-type">Cursor Trigger</div>
-                    </div>
-                    <div class="gesture-arrow">→</div>
-                    <div class="gesture-action">Select / Click</div>
-                    <button class="btn-trash">🗑</button>
-                </div>
-            </div>
-        </div>
-
-        <div class="panel-section">
             <div class="panel-header" style="margin-bottom: 15px;">
                 <div class="panel-title-group">
                     <h2>Neural Identity</h2>
@@ -83,9 +52,16 @@
             <div class="neural-identity-box">
                 <div class="input-with-icon">
                     <span class="icon">🗣</span>
-                    <input type="text" value="Hello Nova" class="dark-input">
+                    <input type="text" id="wake-word-input" value="System" class="dark-input">
                 </div>
-                <button class="btn-purple-save">Save Wake Phrase</button>
+                <button class="btn-purple-save" id="save-wake-word-btn">Save Wake Phrase</button>
+            </div>
+        </div>
+        
+        <div class="right-panel-box">
+            <h3 class="box-title"><span style="color:var(--accent-cyan); margin-right:8px;">📊</span> LIVE ACTIVITY</h3>
+            <div class="activity-list" id="live-activity-feed">
+                <div style="color: var(--text-secondary); font-size: 12px; padding: 10px 0;">Connecting to stream...</div>
             </div>
         </div>
     </div>
@@ -96,23 +72,16 @@
             <div class="module-list">
                 <div class="module-item">
                     <span><span style="color:var(--accent-cyan); margin-right:8px;">🖐</span> Spatial Gestures</span>
-                    <label class="toggle-switch"><input type="checkbox" checked><span class="slider cyan-slider"></span></label>
+                    <label class="toggle-switch"><input type="checkbox" id="module-spatial" checked><span class="slider cyan-slider"></span></label>
                 </div>
                 <div class="module-item">
                     <span><span style="color:#8c9bb4; margin-right:8px;">🗣</span> Voice Commands</span>
-                    <label class="toggle-switch"><input type="checkbox"><span class="slider"></span></label>
+                    <label class="toggle-switch"><input type="checkbox" id="module-voice"><span class="slider"></span></label>
                 </div>
                 <div class="module-item">
-                    <span><span style="color:var(--accent-purple); margin-right:8px;">👁</span> Eye Tracking</span>
-                    <label class="toggle-switch"><input type="checkbox" checked><span class="slider cyan-slider"></span></label>
+                    <span><span style="color:var(--accent-purple); margin-right:8px;">👁</span> Cursor Control</span>
+                    <label class="toggle-switch"><input type="checkbox" id="module-cursor" checked><span class="slider cyan-slider"></span></label>
                 </div>
-            </div>
-        </div>
-
-        <div class="right-panel-box">
-            <h3 class="box-title"><span style="color:var(--accent-cyan); margin-right:8px;">📊</span> LIVE ACTIVITY</h3>
-            <div class="activity-list" id="live-activity-feed">
-                <div style="color: var(--text-secondary); font-size: 12px; padding: 10px 0;">Connecting to stream...</div>
             </div>
         </div>
 
@@ -134,4 +103,112 @@
         </div>
     </div>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const spatialToggle = document.getElementById('module-spatial');
+        const voiceToggle = document.getElementById('module-voice');
+        const cursorToggle = document.getElementById('module-cursor');
+
+        // Fetch initial state
+        fetch('/api/modules-state/')
+            .then(res => res.json())
+            .then(data => {
+                if(data.status === 'success') {
+                    if(spatialToggle) spatialToggle.checked = data.spatial;
+                    if(voiceToggle) voiceToggle.checked = data.voice;
+                    if(cursorToggle) cursorToggle.checked = data.cursor;
+                }
+            })
+            .catch(err => console.error("Error fetching modules state:", err));
+
+        // Add event listeners
+        const updateModule = (module, state) => {
+            fetch('/api/toggle-module/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ module, state })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if(data.status !== 'success') console.error("Error updating module:", data.message);
+            })
+            .catch(err => console.error("Error updating module:", err));
+        };
+
+        if(spatialToggle) spatialToggle.addEventListener('change', (e) => updateModule('spatial', e.target.checked));
+        if(voiceToggle) voiceToggle.addEventListener('change', (e) => updateModule('voice', e.target.checked));
+        if(cursorToggle) cursorToggle.addEventListener('change', (e) => updateModule('cursor', e.target.checked));
+
+        // --- WAKE WORD LOGIC ---
+        const wakeWordInput = document.getElementById('wake-word-input');
+        const saveWakeWordBtn = document.getElementById('save-wake-word-btn');
+        
+        if (wakeWordInput && saveWakeWordBtn) {
+            fetch('/voice/wake-word/')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        wakeWordInput.value = data.wake_word;
+                    }
+                })
+                .catch(err => console.error("Error fetching wake word:", err));
+
+            saveWakeWordBtn.addEventListener('click', () => {
+                const newWord = wakeWordInput.value.trim();
+                if (!newWord) return;
+                
+                const originalText = saveWakeWordBtn.textContent;
+                saveWakeWordBtn.textContent = 'Saving...';
+                
+                fetch('/voice/wake-word/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ wake_word: newWord })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        saveWakeWordBtn.textContent = 'Saved!';
+                        saveWakeWordBtn.style.backgroundColor = '#4caf50';
+                        setTimeout(() => {
+                            saveWakeWordBtn.textContent = originalText;
+                            saveWakeWordBtn.style.backgroundColor = '';
+                        }, 2000);
+                    }
+                })
+                .catch(err => {
+                    console.error("Error saving wake word:", err);
+                    saveWakeWordBtn.textContent = originalText;
+                });
+            });
+        }
+        
+        // --- SYSTEM STATUS POLLING ---
+        function pollSystemStatus() {
+            fetch('/api/system-status/')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        const statusDot = document.getElementById('sys-status-dot');
+                        const statusText = document.getElementById('sys-status-text');
+                        if (statusDot && statusText) {
+                            if (data.system_online) {
+                                statusDot.className = 'dot animated-pulse';
+                                statusDot.style.backgroundColor = '#00f0ff';
+                                statusText.textContent = 'System Online';
+                            } else {
+                                statusDot.className = 'dot';
+                                statusDot.style.backgroundColor = '#ff4d4d';
+                                statusText.textContent = 'System Offline';
+                            }
+                        }
+                    }
+                })
+                .catch(err => console.error("Error polling system status:", err));
+        }
+        setInterval(pollSystemStatus, 2000);
+        pollSystemStatus(); // initial call
+    });
+</script>
 {% endblock %}

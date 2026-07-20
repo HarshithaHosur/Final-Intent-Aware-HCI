@@ -32,4 +32,9 @@ urlpatterns = [
     path('api/users/', views.api_registered_users, name='api_registered_users'),
     path('api/signup-face-capture/', views.api_signup_face_capture, name='api_signup_face_capture'),
     path('api/signup-face-status/', views.api_signup_face_status, name='api_signup_face_status'),
+    path('api/toggle-module/', views.api_toggle_module, name='api_toggle_module'),
+    path('api/modules-state/', views.api_modules_state, name='api_modules_state'),
+    path('api/gestures/add/', views.api_add_gesture, name='api_add_gesture'),
+    path('api/gestures/delete/<str:gesture_id>/', views.api_delete_gesture, name='api_delete_gesture'),
+    path('api/emergency-kill/', views.api_emergency_kill, name='api_emergency_kill'),
 ]

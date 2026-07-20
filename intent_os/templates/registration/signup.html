@@ -184,7 +184,15 @@
                 {{ field }}
             </div>
             {% endfor %}
-            <button type="submit" class="btn-login">REGISTER</button>
+            <div class="form-group" style="text-align: center; margin-top: 15px;">
+                <button type="button" class="btn-login" id="scan-face-btn" style="background: linear-gradient(135deg, #10b981, #1499d3); margin-bottom: 15px;">
+                    📷 SCAN FACE BIOMETRICS
+                </button>
+                <div id="scan-status" style="margin-top: 10px; font-size: 13px; color: var(--accent-cyan); display: none; margin-bottom: 15px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px;">
+                    Waiting for scan...
+                </div>
+            </div>
+            <button type="submit" class="btn-login" id="register-btn" style="display: none;">REGISTER</button>
         </form>
 
         <div class="signup-link">
@@ -192,6 +200,63 @@
         </div>
     </div>
 
-</body>
+    <script>
+        const scanBtn = document.getElementById('scan-face-btn');
+        const scanStatus = document.getElementById('scan-status');
+        const registerBtn = document.getElementById('register-btn');
+        const usernameInput = document.getElementById('id_username');
+        let pollInterval;
 
+        scanBtn.addEventListener('click', async () => {
+            const username = usernameInput.value.trim();
+            if (!username) {
+                alert("Please enter a username first so we can associate your face with it.");
+                return;
+            }
+
+            try {
+                scanBtn.style.display = 'none';
+                scanStatus.style.display = 'block';
+                scanStatus.innerHTML = '⏳ INITIATING CAMERA... PLEASE LOOK AT THE LENS.';
+                scanStatus.style.color = '#1499d3';
+
+                const response = await fetch('/api/signup-face-capture/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: username })
+                });
+
+                const data = await response.json();
+                if (data.status === 'success') {
+                    pollInterval = setInterval(async () => {
+                        const statusRes = await fetch(`/api/signup-face-status/?username=${encodeURIComponent(username)}`);
+                        const statusData = await statusRes.json();
+                        
+                        if (statusData.status === 'captured') {
+                            clearInterval(pollInterval);
+                            scanStatus.innerHTML = '✅ FACE BIOMETRICS CAPTURED SUCCESSFULLY';
+                            scanStatus.style.color = '#10b981';
+                            registerBtn.style.display = 'block';
+                        } else if (statusData.status === 'failed') {
+                            clearInterval(pollInterval);
+                            scanStatus.innerHTML = `❌ SCAN FAILED: ${statusData.error || 'Unknown error'}`;
+                            scanStatus.style.color = '#ef4444';
+                            scanBtn.style.display = 'block';
+                            scanBtn.innerText = 'RETRY FACE SCAN';
+                        }
+                    }, 1000);
+                } else {
+                    scanStatus.innerHTML = `❌ ERROR: ${data.message}`;
+                    scanStatus.style.color = '#ef4444';
+                    scanBtn.style.display = 'block';
+                }
+            } catch (err) {
+                scanStatus.innerHTML = `❌ REQUEST FAILED`;
+                scanStatus.style.color = '#ef4444';
+                scanBtn.style.display = 'block';
+                console.error(err);
+            }
+        });
+    </script>
+</body>
 </html>

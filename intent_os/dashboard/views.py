@@ -183,6 +183,8 @@ def init_db():
             voice_collection.insert_many([dict(c) for c in INITIAL_STATE['voice_commands']])
         if settings_collection.count_documents({"key": "wake_word"}) == 0:
             settings_collection.insert_one({"key": "wake_word", "value": INITIAL_STATE['wake_word']})
+        if settings_collection.count_documents({"key": "active_modules"}) == 0:
+            settings_collection.insert_one({"key": "active_modules", "spatial": True, "voice": True, "cursor": True})
         # Reset session state on server start so users must log in fresh
         settings_collection.update_one(
             {"key": "session_state"},
@@ -444,11 +446,24 @@ def api_system_status(request):
             # MongoDB is alive if we got this far without exception
             db_alive = True
 
+            # Check system heartbeat
+            heartbeat_doc = settings_collection.find_one({"key": "system_heartbeat"})
+            system_online = False
+            if heartbeat_doc and heartbeat_doc.get("last_active"):
+                try:
+                    last_active_time = datetime.datetime.fromisoformat(heartbeat_doc["last_active"].replace('Z', '+00:00'))
+                    now_utc = now.replace(tzinfo=datetime.timezone.utc)
+                    if (now_utc - last_active_time).total_seconds() < 5:
+                        system_online = True
+                except:
+                    pass
+
             return JsonResponse({
                 'status': 'success',
                 'gestures_online': gesture_alive,
                 'voice_online': voice_alive,
-                'database_online': db_alive
+                'database_online': db_alive,
+                'system_online': system_online
             })
         except Exception as e:
             return JsonResponse({
@@ -456,6 +471,7 @@ def api_system_status(request):
                 'gestures_online': False,
                 'voice_online': False,
                 'database_online': False,
+                'system_online': False,
                 'message': str(e)
             })
 
@@ -476,5 +492,66 @@ def api_registered_users(request):
                     'face_registered': bool(face_doc),
                 })
             return JsonResponse({'status': 'success', 'users': user_list, 'total': len(user_list)})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)})
+
+@csrf_exempt
+def api_toggle_module(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            module = data.get('module')
+            state = data.get('state')
+            if module in ['spatial', 'voice', 'cursor']:
+                settings_collection.update_one(
+                    {"key": "active_modules"},
+                    {"$set": {module: state}},
+                    upsert=True
+                )
+                return JsonResponse({'status': 'success'})
+            return JsonResponse({'status': 'error', 'message': 'Invalid module'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)})
+
+def api_modules_state(request):
+    if request.method == 'GET':
+        try:
+            doc = settings_collection.find_one({"key": "active_modules"})
+            if not doc:
+                doc = {"spatial": True, "voice": True, "cursor": True}
+            return JsonResponse({
+                'status': 'success',
+                'spatial': doc.get('spatial', True),
+                'voice': doc.get('voice', True),
+                'cursor': doc.get('cursor', True)
+            })
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)})
+
+@csrf_exempt
+def api_add_gesture(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            gestures_collection.insert_one(data)
+            return JsonResponse({'status': 'success'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)})
+
+@csrf_exempt
+def api_delete_gesture(request, gesture_id):
+    if request.method == 'DELETE':
+        try:
+            gestures_collection.delete_one({"id": gesture_id})
+            return JsonResponse({'status': 'success'})
+        except Exception as e:
+            return JsonResponse({'status': 'error', 'message': str(e)})
+
+@csrf_exempt
+def api_emergency_kill(request):
+    if request.method == 'POST':
+        try:
+            settings_collection.update_one({"key": "system_state"}, {"$set": {"terminate_system": True}}, upsert=True)
+            return JsonResponse({'status': 'success'})
         except Exception as e:
             return JsonResponse({'status': 'error', 'message': str(e)})

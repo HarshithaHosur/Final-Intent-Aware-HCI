@@ -61,7 +61,7 @@
                 </div>
                 <div class="top-nav-right">
                     <div class="system-status">
-                        <span class="dot animated-pulse"></span> System Online
+                        <span class="dot" id="sys-status-dot" style="background-color: #ff4d4d;"></span> <span id="sys-status-text">System Offline</span>
                     </div>
                     <!-- Users Panel Button -->
                     <div class="users-panel-wrapper" style="position: relative;">
@@ -81,9 +81,9 @@
                             </div>
                         </div>
                     </div>
-                    <button class="btn-icon">🔔</button>
-                    <button class="btn-icon">📊</button>
-                    <button class="btn-emergency">Emergency Kill</button>
+                    <button class="btn-icon" onclick="alert('No new system notifications.')">🔔</button>
+                    <button class="btn-icon" onclick="window.location.href='/live-nodes/'">📊</button>
+                    <button class="btn-emergency" onclick="emergencyKill()">Emergency Kill</button>
                 </div>
             </header>
 
@@ -185,6 +185,20 @@
                 }
             }).catch(() => {});
         });
+
+        function emergencyKill() {
+            if(confirm("Are you sure you want to terminate the AI system?")) {
+                fetch('/api/emergency-kill/', { method: 'POST' })
+                    .then(res => res.json())
+                    .then(data => {
+                        if(data.status === 'success') {
+                            document.getElementById('sys-status-dot').className = 'dot';
+                            document.getElementById('sys-status-dot').style.backgroundColor = '#ff4d4d';
+                            document.getElementById('sys-status-text').textContent = 'System Offline';
+                        }
+                    });
+            }
+        }
     </script>
     {% block scripts %}{% endblock %}
 </body>

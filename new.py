@@ -934,6 +934,10 @@ class GestureRecognizer:
 # ============================================================
 
 def execute_gesture_action(gesture_name, context):
+    global ACTIVE_GESTURE_IDS
+    if 'ACTIVE_GESTURE_IDS' in globals() and ACTIVE_GESTURE_IDS is not None:
+        if gesture_name not in ACTIVE_GESTURE_IDS:
+            return None
     if gesture_name not in GESTURE_ACTION_MAP:
         return None
     context_map = GESTURE_ACTION_MAP[gesture_name]
@@ -1265,8 +1269,8 @@ def voice_callback(recognizer, audio):
             if ww_doc and ww_doc.get("value"):
                 ww = ww_doc["value"].lower().strip()
                 global SYSTEM_EXACT_PREFIXES, SYSTEM_TWO_WORD_PREFIXES
-                SYSTEM_EXACT_PREFIXES = [ww, f"{ww}s", 'system', 'sistem', 'systm', 'systam', 'sistam']
-                SYSTEM_TWO_WORD_PREFIXES = [f"hey {ww}", f"ok {ww}", f"okay {ww}", 'hey system', 'ok system', 'okay system', 'hey sistem', 'ok sistem']
+                SYSTEM_EXACT_PREFIXES = [ww, f"{ww}s"]
+                SYSTEM_TWO_WORD_PREFIXES = [f"hey {ww}", f"ok {ww}", f"okay {ww}"]
         except Exception:
             pass
 
@@ -1281,6 +1285,9 @@ def voice_callback(recognizer, audio):
                 continue
         
         if not text:
+            return
+        
+        if system_state_global.get('module_voice', True) is False:
             return
         
         print(f"[MIC] Heard: '{text}'")
@@ -1712,6 +1719,14 @@ def main():
             SYSTEM_TWO_WORD_PREFIXES = [f"hey {ww}", f"ok {ww}", f"okay {ww}"]
             print(f"[DB SYNC] Connected to frontend! Wake word updated to '{ww}'")
             
+        # Initial gesture sync
+        try:
+            db_gestures = list(db["gestures"].find({}, {"_id": 0, "id": 1}))
+            global ACTIVE_GESTURE_IDS
+            ACTIVE_GESTURE_IDS = {g["id"] for g in db_gestures}
+        except Exception:
+            ACTIVE_GESTURE_IDS = None
+            
         # Also sync Voice Commands from MongoDB to map properly
         # (This connects the UI's voice list to the backend logic if they were updated)
         try:
@@ -1726,6 +1741,7 @@ def main():
 
     except Exception as e:
         print(f"[DB SYNC] Could not connect to MongoDB: {e}")
+        ACTIVE_GESTURE_IDS = None
         
     cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
     if not cap.isOpened():
@@ -1780,6 +1796,9 @@ def main():
         'candidate_start_time': None,
         'gesture_lock_until': 0,
         'prev_avg_y': None,
+        'module_spatial': True,
+        'module_voice': True,
+        'module_cursor': True,
     }
 
     voice_thread = threading.Thread(
@@ -1972,6 +1991,15 @@ def main():
                         elif left_hand_landmarks is not None:
                             current_candidate = gesture_recognizer.detect_static_gesture(left_hand_landmarks, 'Left')
 
+            # Filter out spatial gestures if module is disabled
+            if current_candidate is not None:
+                if current_candidate == 'index_cursor':
+                    if not system_state.get('module_cursor', True):
+                        current_candidate = None
+                else:
+                    if not system_state.get('module_spatial', True):
+                        current_candidate = None
+
             # Bypass spatial stability check for 'index_cursor' and 'double_palm' to make activation fast/reliable
             if current_candidate is not None and (is_stable or current_candidate in ['index_cursor', 'double_palm']):
                 if system_state.get('gesture_candidate') == current_candidate:
@@ -2019,10 +2047,33 @@ def main():
         detected_gesture = ''
         inactivity_remaining = INACTIVITY_TIMEOUT
 
-        # Check global login state for active states (throttled to once per second)
-        if current_state not in [STATE_LOGIN_WAITING, STATE_FACE_VERIFICATION, STATE_FACE_REGISTRATION, STATE_SIGNUP_REGISTRATION]:
-            if curr_time - last_session_check_time >= 1.0:
-                last_session_check_time = curr_time
+        # Throttled 1-second system tasks
+        if curr_time - last_session_check_time >= 1.0:
+            last_session_check_time = curr_time
+            
+            # Write heartbeat and check emergency kill
+            try:
+                import datetime
+                db["settings"].update_one(
+                    {"key": "system_heartbeat"},
+                    {"$set": {"last_active": datetime.datetime.utcnow().isoformat() + "Z"}},
+                    upsert=True
+                )
+                sys_state_doc = db["settings"].find_one({"key": "system_state"})
+                if sys_state_doc and sys_state_doc.get("terminate_system"):
+                    db["settings"].update_one({"key": "system_state"}, {"$set": {"terminate_system": False}})
+                    print("[SYSTEM] Emergency Kill Received. Shutting down...")
+                    system_state['state'] = STATE_TERMINATING
+                    break
+                    
+                # Sync active gestures dynamically
+                db_gestures = list(db["gestures"].find({}, {"_id": 0, "id": 1}))
+                ACTIVE_GESTURE_IDS = {g["id"] for g in db_gestures}
+            except Exception:
+                pass
+
+            # Check global login state for active states
+            if current_state not in [STATE_LOGIN_WAITING, STATE_FACE_VERIFICATION, STATE_FACE_REGISTRATION, STATE_SIGNUP_REGISTRATION]:
                 session_doc = db["settings"].find_one({"key": "session_state"})
                 if not session_doc or not session_doc.get("logged_in"):
                     current_state = STATE_LOGIN_WAITING
@@ -2031,6 +2082,17 @@ def main():
                         system_state['cursor_active'] = False
                     system_state['voice_activate'] = False
                     print("[STATE] Logged out → LOGIN_WAITING")
+                
+                active_modules_doc = db["settings"].find_one({"key": "active_modules"})
+                if active_modules_doc:
+                    system_state['module_spatial'] = active_modules_doc.get('spatial', True)
+                    system_state['module_voice'] = active_modules_doc.get('voice', True)
+                    system_state['module_cursor'] = active_modules_doc.get('cursor', True)
+                    
+                    if not system_state['module_cursor'] and system_state.get('cursor_active', False):
+                        cursor_controller.release()
+                        system_state['cursor_active'] = False
+                        speak("Cursor mode disabled.")
 
         if current_state == STATE_LOGIN_WAITING:
             system_state['voice_activate'] = False # Ignore voice
@@ -2363,7 +2425,7 @@ def main():
                             log_event(event_type="gesture", command="Drag", action="Dragging Executed", status="completed")
                         
                         swipe = gesture_recognizer.detect_swipe(hand_landmarks, handedness, CAMERA_WIDTH)
-                        if swipe:
+                        if swipe and system_state.get('module_spatial', True):
                             cursor_controller.release()
                             detected_gesture = swipe
                             last_interaction_time = curr_time
@@ -2379,7 +2441,7 @@ def main():
                     else:
                         # Not in cursor mode, check for swipe actions
                         swipe = gesture_recognizer.detect_swipe(hand_landmarks, handedness, CAMERA_WIDTH)
-                        if swipe:
+                        if swipe and system_state.get('module_spatial', True):
                             detected_gesture = swipe
                             last_interaction_time = curr_time
                             system_state['last_interaction'] = last_interaction_time
@@ -2438,7 +2500,7 @@ def main():
                         system_state['gesture_lock_until'] = curr_time + 1.0
                 elif current_candidate is None and not in_cooldown:
                     swipe = gesture_recognizer.detect_swipe(hand_landmarks, handedness, CAMERA_WIDTH)
-                    if swipe:
+                    if swipe and system_state.get('module_spatial', True):
                         detected_gesture = swipe
                         last_interaction_time = curr_time
                         system_state['last_interaction'] = last_interaction_time
